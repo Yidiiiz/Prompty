@@ -40,6 +40,7 @@ import { clamp } from "../../shared/util";
 import type { ConversationTree } from "../../shared/tree";
 import { subscribe } from "../observer";
 import { toastOnce } from "../toast";
+import { getComposerDockRect } from "../composer";
 import type { Ctx } from "../ctx";
 import { findAnchorText, findQuote, firstLineRect, indexText, type TextIndex } from "./anchoring";
 
@@ -216,14 +217,6 @@ export class NoteCardManager {
     const container = this.ctx.domMap.container;
     if (!container) return 0;
     return viewportY - container.getBoundingClientRect().top;
-  }
-
-  private gutterWidth(): number {
-    const container = this.ctx.domMap.container;
-    if (!container) return GUTTER_MIN_WIDTH;
-    const rect = container.getBoundingClientRect();
-    const space = window.innerWidth - rect.right - 24;
-    return clamp(space, GUTTER_MIN_WIDTH, GUTTER_WIDTH);
   }
 
   /* -------------------------------------------------------- entry points */
@@ -493,15 +486,29 @@ export class NoteCardManager {
     const layer = this.ensureGutter();
     if (!conversationUuid || !tree || !layer || !this.ctx.domMap.container) return;
 
-    const width = this.gutterWidth();
-    const widthPx = `${width}px`;
-    if (this.host && this.host.style.width !== widthPx) {
-      this.host.style.width = widthPx;
-      // squeeze toward the content edge when the window is narrow
-      const container = this.ctx.domMap.container;
-      const space = window.innerWidth - container.getBoundingClientRect().right - 24;
-      const overlapLeft = space < width ? `${Math.round(space - width)}px` : "12px";
-      this.host.style.marginLeft = overlapLeft;
+    /* geometry: stay right of the chat column AND clear of the prompt box
+       (cards scroll past it vertically, so any horizontal overlap intrudes);
+       when the margin can't fit the gutter, hide it entirely — never overlap. */
+    const containerRect = this.ctx.domMap.container.getBoundingClientRect();
+    let offset = 24;
+    const dockRect = getComposerDockRect();
+    if (dockRect && dockRect.right > containerRect.right + offset - 16) {
+      offset = dockRect.right - containerRect.right + 16;
+    }
+    const fits = containerRect.right + offset + GUTTER_MIN_WIDTH <= window.innerWidth - 8;
+    if (this.host) {
+      const display = fits ? "" : "none";
+      if (this.host.style.display !== display) this.host.style.display = display;
+      if (!fits) return;
+      const width = clamp(
+        window.innerWidth - containerRect.right - offset - 8,
+        GUTTER_MIN_WIDTH,
+        GUTTER_WIDTH
+      );
+      const widthPx = `${Math.round(width)}px`;
+      const marginPx = `${Math.round(offset)}px`;
+      if (this.host.style.width !== widthPx) this.host.style.width = widthPx;
+      if (this.host.style.marginLeft !== marginPx) this.host.style.marginLeft = marginPx;
     }
 
     /* read phase: resolve anchors */
@@ -737,11 +744,10 @@ const CARD_BASE_CSS = `
     line-height: 1.5;
     color: ${cssVar("--text-200")};
     background: ${cssVar("--bg-000")};
-    border: 1px solid ${cssVar("--border-300")};
     border-radius: ${UI.radiusMd};
     box-shadow: ${UI.shadowSm};
     padding: 10px 12px;
-    transition: top 160ms ease, box-shadow ${UI.transition}, border-color ${UI.transition};
+    transition: top 160ms ease, box-shadow ${UI.transition};
     animation: pt-card-in 180ms ease-out;
   }
   @keyframes pt-card-in {
@@ -749,7 +755,10 @@ const CARD_BASE_CSS = `
     to { opacity: 1; transform: translateY(0); }
   }
   .card:hover { box-shadow: ${UI.shadowMd}; }
-  .card:focus-within { border-color: ${cssVar("--accent-main-100", 0.55)}; }
+  .card:focus-within {
+    box-shadow: inset 3px 0 0 0 ${cssVar("--accent-main-100", 0.55)}, ${UI.shadowMd};
+    border-radius: 0 ${UI.radiusMd} ${UI.radiusMd} 0;
+  }
   .card .quote {
     font-size: 11px;
     color: ${cssVar("--text-400")};
@@ -836,25 +845,26 @@ const GUTTER_CSS = `
     width: 26px; height: 26px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-family: ${FONT_SANS}; font-size: 13px; line-height: 1;
-    color: ${cssVar("--accent-main-200")};
+    color: ${cssVar("--text-300")};
     background: ${cssVar("--bg-000")};
-    border: 1px solid ${cssVar("--border-200")};
+    border: none;
     box-shadow: ${UI.shadowSm};
     z-index: 5;
-    transition: background ${UI.transition}, transform ${UI.transition}, box-shadow ${UI.transition};
+    transition: background ${UI.transition}, color ${UI.transition}, transform ${UI.transition}, box-shadow ${UI.transition};
   }
   /* generous invisible hit area — the pointer travels from the text */
   .entry::after { content: ""; position: absolute; inset: -10px; border-radius: 50%; }
   .entry:hover {
-    background: ${cssVar("--accent-main-100", 0.1)};
+    background: ${cssVar("--bg-200")};
+    color: ${cssVar("--text-100")};
     transform: translateY(-1px);
     box-shadow: ${UI.shadowMd};
   }
   .entry:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
   .conn {
     position: absolute; left: -10px; width: 9px;
-    border-left: 1px solid ${cssVar("--accent-main-100", 0.45)};
-    border-top: 1px solid ${cssVar("--accent-main-100", 0.45)};
+    border-left: 1px solid ${cssVar("--border-200")};
+    border-top: 1px solid ${cssVar("--border-200")};
     border-top-left-radius: 4px;
     pointer-events: none;
   }
@@ -875,7 +885,6 @@ const MODAL_CSS = `
     font-family: ${FONT_SANS}; font-size: 14px; line-height: 1.55;
     color: ${cssVar("--text-100")};
     background: ${cssVar("--bg-000")};
-    border: 1px solid ${cssVar("--border-300")};
     border-radius: ${UI.radiusLg};
     box-shadow: ${UI.shadowLg};
     width: min(640px, calc(100vw - 48px));

@@ -2,6 +2,67 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.3.0 — 2026-07-10
+
+Third feedback release: the Prompt history panel rebuilt from the ground up,
+notes/comments moved clear of the prompt box, borderless shadow-elevated
+styling everywhere, and a set of interaction fixes.
+
+### Prompt history panel — redesigned from scratch
+
+- **New structure**: prompts and their responses are paired — the response
+  nests under its prompt with a rounded-L indicator, dimmer text, and a
+  darker background. Messages with branches become section headers (fork
+  glyph + `k/n` count) with their numbered branch options directly beneath;
+  ordinary pairs hang off a guide line that ends at the last item (no more
+  full-height rail).
+- The current branch option uses the extension's signature quote-chip style:
+  accent left bar, darker background, dark highlighted text.
+- Heading is now sentence case ("Prompt history").
+- **Minimized state shows icons again**: collapsing yields a slim strip with
+  one dot per prompt/response pair and fork glyphs at branch points —
+  tooltips and click-to-scroll included. Glyphs are muted, not bright accent.
+- **Responsive fit**: the panel measures the real margin next to the chat and
+  steps full panel → icon strip → hidden as space runs out.
+
+### Notes & comments
+
+- Cards moved further right and now actively clear the prompt box: if the
+  composer is wider than the chat column, the gutter shifts right of it, so
+  scrolling cards never cross the input. When the margin can't fit the
+  gutter at all, it disappears instead of overlapping.
+- The old "squeeze over the chat" behavior (the cause of cards covering the
+  prompt box) is removed.
+
+### Click highlights
+
+- Clicking a prompt in the panel now pulses its **entire bubble**; clicking a
+  response pulses **only the reply text block** — never the empty space
+  reserved for controls beneath it.
+
+### Floating bars
+
+- The "Branching from…" header and the "autosaved message" banner now float
+  just above the prompt box instead of being inserted inside it, styled with
+  the quote-chip left bar (branching = accent, draft = secondary accent);
+  they stack when both are visible.
+
+### All UI
+
+- Borders removed across panel, cards, margin buttons, modal, toasts, and
+  bars — elevation comes from layered shadows (with a faint edge ring for
+  light mode).
+- Palette dimmed for an organization tool that stays out of the way: muted
+  glyphs and buttons, accent reserved for the current branch, the primary
+  action button, and hovers.
+- Toasts/warnings now appear at the **top** of the page, below the site
+  header.
+
+### Fixes
+
+- Removed the stale `main` landmark selector that produced a false
+  "page hooks not found (mainLandmark)" warning after a site update.
+
 ## 0.2.0 — 2026-07-10
 
 Feedback release: no-reload branch switching, a redesigned panel, interaction

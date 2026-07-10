@@ -50,28 +50,47 @@ export class DomMap {
   }
 
   /**
-   * The message TEXT element of a row — for highlight effects that must not
-   * cover the hover-toolbar space under the text. Human rows have the
-   * user-message hook; assistant rows use the direct child holding the most
-   * text that doesn't contain the action bar. Falls back to the row itself.
+   * The message BOX of a row — the element highlight effects should cover.
+   * Prompts: the full bubble (the padded parent of the user-message text).
+   * Responses: the deepest wrapper holding the reply text but NOT the hover
+   * toolbar, found by descending out of any wrapper the toolbar shares with
+   * the text. Falls back to the row itself.
    */
   contentElOf(row: DomRow): HTMLElement {
     if (row.sender === "human") {
-      const el = row.el.querySelector<HTMLElement>(sel("userMessage"));
-      if (el) return el;
-    }
-    let best: HTMLElement | null = null;
-    let bestLen = 0;
-    for (const child of row.el.children) {
-      if (!(child instanceof HTMLElement)) continue;
-      if (child.querySelector(sel("actionBarCopy")) || child.querySelector(sel("actionBarRetry"))) continue;
-      const len = (child.textContent ?? "").length;
-      if (len > bestLen) {
-        bestLen = len;
-        best = child;
+      const textEl = row.el.querySelector<HTMLElement>(sel("userMessage"));
+      if (textEl) {
+        const bubble = textEl.parentElement;
+        return bubble && bubble !== row.el ? bubble : textEl;
       }
+      return row.el;
     }
-    return best ?? row.el;
+    const hasBar = (el: HTMLElement) =>
+      !!el.querySelector(sel("actionBarCopy")) || !!el.querySelector(sel("actionBarRetry"));
+    let el: HTMLElement = row.el;
+    for (let depth = 0; depth < 8 && hasBar(el); depth++) {
+      const kids = [...el.children].filter((c): c is HTMLElement => c instanceof HTMLElement);
+      // best text-holder that already excludes the toolbar
+      let clean: HTMLElement | null = null;
+      let cleanLen = 0;
+      for (const kid of kids) {
+        if (hasBar(kid)) continue;
+        const len = (kid.textContent ?? "").length;
+        if (len > cleanLen) {
+          cleanLen = len;
+          clean = kid;
+        }
+      }
+      const shared = kids.find(hasBar) ?? null;
+      const sharedLen = shared ? (shared.textContent ?? "").length : 0;
+      if (clean && cleanLen >= sharedLen) return clean;
+      if (shared) {
+        el = shared; // text and toolbar share this wrapper — descend into it
+        continue;
+      }
+      break;
+    }
+    return hasBar(el) ? row.el : el;
   }
 
   rebuild(tree: ConversationTree | null): void {

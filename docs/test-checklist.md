@@ -12,7 +12,10 @@ touched plus "Cross-cutting".
 
 - ☐ `npm run check` passes; `dist/` loads as unpacked with no manifest errors.
 - ☐ Open claude.ai: no console errors from `[prompt-tree]` (warnings about
-  optional selectors are OK on pages without a conversation).
+  optional selectors are OK on pages without a conversation); in particular
+  no "page hooks not found (mainLandmark)" warning.
+- ☐ Any extension toast appears **top-center below the site header**, not at
+  the bottom.
 - ☐ Popup opens; all five toggles reflect stored state; toggling updates the
   live tab without reload.
 - ☐ Extension UI matches the site theme; switch claude.ai light ↔ dark: all
@@ -42,38 +45,38 @@ touched plus "Cross-cutting".
 - ☐ Navigating to another conversation while active exits the mode cleanly.
 - ☐ Popup toggle off: buttons disappear, active mode cancels.
 
-## 2. Prompt History panel
+## 2. Prompt history panel
 
-- ☐ Panel appears over the left edge of the chat scroll area, spanning the
-  full viewport height below the site header (280px wide, titled
-  "Prompt History"); it does not cover the native sidebar, sits flush when
-  the sidebar is open, and does not scroll with messages.
+- ☐ Panel appears over the left margin of the chat, spanning the full
+  viewport height below the site header (280px wide, titled "Prompt history"
+  in sentence case); it does not cover the native sidebar and does not
+  scroll with messages.
 - ☐ Opening the site's **settings dialog / account menu covers the panel**
   (and every other extension surface) — extension UI never sits on top of
   site overlays.
-- ☐ One entry per message of the active path; user vs assistant dots visually
-  distinct on the continuous rail; summaries are markdown-stripped first ~6
-  words, ellipsized.
-- ☐ Clicking an entry smooth-scrolls the message near the viewport top with a
-  brief (~0.6s) highlight pulse **on the message text only** — not the empty
-  control space beneath it.
-- ☐ A branched message shows a passive `k/n` count chip AND an always-visible
-  numbered branch list beneath the entry: first two branches at reduced
-  opacity, current one full-opacity with an accent tick; `▸ N more` caret
-  reveals the rest, `▾ show less` collapses.
-- ☐ **Clicking a branch switches WITHOUT a page reload**: the chat re-renders
-  in place (native arrows are driven for you) and the panel follows.
-- ☐ **Direct jump 1 → 3** works (steps through 2 transiently); adjacent hops
-  work in both directions.
-- ☐ Panel updates live while an assistant reply streams (entry appears/summary
-  fills in) without jank.
-- ☐ Chevron collapses to a thin edge tab; **state persists across reload**
-  (chrome.storage.local).
-- ☐ **Compact mode**: narrow the window below ~1100px → dot strip with
-  tooltips; same click behaviors. Also auto-compact on a chat with <4
-  messages.
-- ☐ Note/comment side branches never appear as panel entries, branch lists,
-  or counts.
+- ☐ **Paired structure**: each prompt is a row; its response nests beneath it
+  with a rounded-L indicator, smaller/dimmer text, and a darker background.
+- ☐ **Branch points are section headers**: fork glyph + summary + `k/n`
+  count; their numbered branch options render directly beneath (first two at
+  reduced opacity; the **current one in the quote-chip style** — accent left
+  bar, darker background, dark text); `▸ N more` expands, `▾ show less`
+  collapses.
+- ☐ Ordinary pairs hang off a guide line that **ends at the last item** — no
+  line continues past the final message.
+- ☐ Clicking a prompt row smooth-scrolls to it and pulses (~0.6s) the **whole
+  prompt bubble**; clicking a response row pulses **only the reply text
+  block**, never the control space beneath it.
+- ☐ **Clicking a branch option switches WITHOUT a page reload**: the chat
+  re-renders in place (native arrows are driven for you) and the panel
+  follows. **Direct jump 1 → 3** works (steps through 2 transiently).
+- ☐ Panel updates live while an assistant reply streams, without jank.
+- ☐ **Minimized = icon strip**: the chevron collapses the panel to a slim
+  strip showing a muted dot per pair and `⑂` at branch points, with tooltips
+  and the same click-to-scroll; state persists across reload.
+- ☐ **Responsive fit**: shrink the window — the panel steps full → strip →
+  hidden as the margin next to the chat runs out, and returns when widened.
+- ☐ Note/comment side branches never appear as panel rows, options, or
+  counts.
 
 ## 3. Notes
 
@@ -95,7 +98,12 @@ touched plus "Cross-cutting".
   modal with markdown rendering; Esc/✕/backdrop closes it.
 - ☐ **Multiple notes on one message** work; **two notes near the same line
   stack with push-down** and connector lines point at their anchor lines.
-- ☐ Cards scroll with the chat (they live in the message scroll area).
+- ☐ Cards scroll with the chat (they live in the message scroll area) and
+  **never cross the prompt box** while scrolling — the gutter sits fully
+  right of it.
+- ☐ Narrow the window until the right margin is too small for cards: the
+  gutter (cards, buttons, composer) **disappears instead of overlapping**,
+  and returns when the window widens.
 - ☐ Reload the page: notes re-anchor to their quotes and re-render with
   content pulled from the conversation tree.
 - ☐ **Anchor moved**: edit the annotated assistant text away… not possible
@@ -137,6 +145,9 @@ touched plus "Cross-cutting".
   reattaches (or an honest "couldn't reattach" notice appears).
 - ☐ Attach >5 MB total, type, reload: banner shows "(attachments not saved)";
   Restore refills text only.
+- ☐ The restore banner **floats above the prompt box** (not inside it), with
+  the secondary-accent left bar; with branch mode also active, the branching
+  header stacks above the banner without overlap.
 - ☐ **Branch draft**: enter branch mode, type, reload, Restore → branch mode
   re-activates on the same target (ghost/hide/header) with text refilled;
   send branches correctly.

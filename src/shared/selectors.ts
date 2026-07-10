@@ -71,11 +71,9 @@ export const SELECTORS = {
       "Native text-selection popover (fixed, transform-centered). The note button is placed adjacent to, never overlapping, this.",
     optional: true, // only while a selection is active
   },
-  mainLandmark: {
-    selector: "main",
-    description: "Structural landmark containing the conversation view.",
-    optional: false,
-  },
+  // NOTE: a `main` landmark entry used to live here; claude.ai stopped
+  // rendering one (field-observed) and nothing consumed it, so it was removed
+  // rather than producing a permanent false "hooks not found" warning.
 } as const satisfies Record<string, SelectorEntry>;
 
 export type SelectorName = keyof typeof SELECTORS;

@@ -55,10 +55,17 @@ export const UI = {
   radiusSm: "8px",
   radiusMd: "12px",
   radiusLg: "16px",
-  /** Layered, soft shadows (small = resting card, large = overlay). */
-  shadowSm: "0 1px 2px hsl(0 0% 0% / 0.05), 0 2px 8px hsl(0 0% 0% / 0.06)",
-  shadowMd: "0 2px 4px hsl(0 0% 0% / 0.06), 0 8px 24px hsl(0 0% 0% / 0.10)",
-  shadowLg: "0 8px 16px hsl(0 0% 0% / 0.12), 0 24px 64px hsl(0 0% 0% / 0.22)",
+  /**
+   * Layered, soft shadows (small = resting card, large = overlay). Surfaces
+   * are borderless by design; the faint 1px ring keeps a crisp edge in light
+   * mode without reading as a border.
+   */
+  shadowSm:
+    "0 0 0 1px hsl(0 0% 0% / 0.04), 0 1px 2px hsl(0 0% 0% / 0.05), 0 3px 10px hsl(0 0% 0% / 0.08)",
+  shadowMd:
+    "0 0 0 1px hsl(0 0% 0% / 0.04), 0 2px 6px hsl(0 0% 0% / 0.07), 0 10px 28px hsl(0 0% 0% / 0.12)",
+  shadowLg:
+    "0 0 0 1px hsl(0 0% 0% / 0.05), 0 8px 16px hsl(0 0% 0% / 0.12), 0 24px 64px hsl(0 0% 0% / 0.22)",
   /** Single motion voice. */
   transition: "150ms cubic-bezier(0.2, 0, 0.2, 1)",
 } as const;

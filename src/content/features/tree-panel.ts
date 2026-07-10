@@ -1,28 +1,27 @@
 /**
- * content/features/tree-panel.ts — Feature 2: the "Prompt History" panel.
+ * content/features/tree-panel.ts — Feature 2: the "Prompt history" panel.
  *
- * A collapsible panel overlaid on the left edge of the chat scroll area
- * (position: fixed; spans the full viewport height below the site header;
- * geometry recomputed from the scroll container's rect on each observer tick,
- * reads batched before writes). One entry per message on the active path,
- * summarized by the swappable summarizer module, drawn on a single continuous
- * rail with sender-distinct dots.
+ * A quiet, borderless (shadow-elevated) panel overlaid on the left margin of
+ * the chat, spanning the viewport below the site header. The conversation is
+ * shown as prompt/response PAIRS: each prompt is a row, its response nests
+ * beneath it with a rounded-L indicator, dimmer and on a darker background.
+ * Messages with branches become section headers (fork glyph + k/n count) with
+ * their numbered branch options directly beneath — first two visible, the
+ * rest behind a caret; the current branch uses the extension's signature
+ * quote-chip style (accent left bar, darker background, dark text). Sub-pairs
+ * hang off a guide line that ends at the last item.
  *
- * Branches: any message with siblings renders an ALWAYS-VISIBLE numbered
- * branch list beneath its entry — the first two branches inline (reduced
- * opacity; the current one full-opacity with an accent tick), the rest behind
- * a caret row. Clicking a branch switches through the branch-navigation
- * adapter (native-arrow stepping, no page reload; API+reload fallback).
+ * Modes, computed each tick from the real gap between the scroll-area edge
+ * and the chat column:
+ *   full  — gap fits ~300px (and viewport ≥ 1100px, ≥ 4 messages)
+ *   strip — icon-only rail (~36px): dots per pair, fork glyphs for branch
+ *           points, tooltips, same jump clicks; also the user-collapsed state
+ *   hidden — not even the strip fits
  *
  * Rendering is driven by the ConversationTree model (bus "tree-updated"),
  * never DOM diffing; a render-signature check and a summary memo keep
- * streaming updates cheap.
- *
- * Degradation: with no mappable chat container the panel hides itself; if
- * branch switching fails the adapter shows its own one-time toast.
- *
- * Compact mode (viewport < 1100px or chat < 4 messages): a minimal vertical
- * node strip — dots and fork counts with tooltips, same click behavior.
+ * streaming updates cheap. Branch switching goes through the
+ * branch-navigation adapter (native-arrow stepping, no reload).
  */
 import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { summarizer } from "../../shared/summary";
@@ -33,177 +32,204 @@ import { subscribe } from "../observer";
 import { NativeArrowsAdapter, type BranchSwitchAdapter } from "../branch-switch";
 import type { Ctx, Feature } from "../ctx";
 
-const COMPACT_VIEWPORT = 1100;
-const COMPACT_MIN_MESSAGES = 4;
-const BRANCHES_SHOWN_COLLAPSED = 2;
+const MIN_VIEWPORT_FOR_FULL = 1100;
+const MIN_MESSAGES_FOR_FULL = 4;
+const FULL_WIDTH = 280;
+const STRIP_WIDTH = 36;
+const OPTIONS_SHOWN_COLLAPSED = 2;
+
+type PanelMode = "full" | "strip" | "hidden";
+
+/** A prompt and (when already answered) its response. */
+interface Pair {
+  prompt: TreeNode;
+  response: TreeNode | null;
+}
 
 const PANEL_CSS = `
   :host { all: initial; }
   * { box-sizing: border-box; }
-  button { font-family: inherit; }
-  button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
+  button { font-family: inherit; border: none; background: none; cursor: pointer; text-align: left; }
+  button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.55)}; outline-offset: 1px; }
 
   .panel {
     position: fixed;
     z-index: ${Z_PANEL};
     display: flex;
     flex-direction: column;
-    width: 280px;
+    width: ${FULL_WIDTH}px;
     font-family: ${FONT_SANS};
-    color: ${cssVar("--text-200")};
-    background: ${cssVar("--bg-100", 0.88)};
-    backdrop-filter: blur(12px) saturate(1.1);
-    border: 1px solid ${cssVar("--border-300")};
+    color: ${cssVar("--text-300")};
+    background: ${cssVar("--bg-100", 0.92)};
+    backdrop-filter: blur(12px) saturate(1.05);
     border-radius: ${UI.radiusLg};
-    box-shadow: ${UI.shadowSm};
+    box-shadow: ${UI.shadowMd};
     overflow: hidden;
     transition: width ${UI.transition};
   }
+  .panel.strip { width: ${STRIP_WIDTH}px; }
 
   .head {
-    display: flex; align-items: center; gap: 8px;
-    padding: 12px 10px 10px 16px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 11px 8px 7px 14px;
     flex: none;
   }
-  .head .title {
+  .panel.strip .head { padding: 8px 0 4px; justify-content: center; }
+  .title {
     flex: 1;
-    font-size: 11px; font-weight: 600;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    color: ${cssVar("--text-400")};
-    white-space: nowrap; overflow: hidden;
+    font-size: 12px; font-weight: 600;
+    color: ${cssVar("--text-300")};
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .panel.strip .title { display: none; }
   .chev {
-    flex: none; cursor: pointer; border: none; background: none;
-    width: 24px; height: 24px; border-radius: ${UI.radiusSm};
+    flex: none;
+    width: 22px; height: 22px; border-radius: ${UI.radiusSm};
     display: flex; align-items: center; justify-content: center;
-    color: ${cssVar("--text-400")}; font-size: 12px; line-height: 1;
+    color: ${cssVar("--text-500")}; font-size: 12px; line-height: 1;
     transition: background ${UI.transition}, color ${UI.transition};
   }
-  .chev:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
+  .chev:hover { background: ${cssVar("--bg-300", 0.7)}; color: ${cssVar("--text-100")}; }
+  .chev.off { display: none; }
 
   .list {
     flex: 1;
-    position: relative;
     overflow-y: auto; overflow-x: hidden;
-    padding: 4px 8px 12px 8px;
+    padding: 0 10px 14px 12px;
     scrollbar-width: thin;
     scrollbar-color: ${cssVar("--border-200")} transparent;
   }
-  .list::-webkit-scrollbar { width: 6px; }
+  .list::-webkit-scrollbar { width: 5px; }
   .list::-webkit-scrollbar-thumb { background: ${cssVar("--border-200")}; border-radius: 3px; }
+  .panel.strip .list { padding: 2px 0 10px; }
 
-  /* one continuous rail behind all dots */
-  .rail {
-    position: absolute; left: 19px; top: 10px; bottom: 12px; width: 2px;
-    background: ${cssVar("--border-300")};
-    border-radius: 1px;
-  }
-
-  .entry {
-    position: relative;
-    display: flex; align-items: flex-start; gap: 10px;
-    width: 100%; text-align: left;
-    padding: 6px 8px 6px 4px;
-    border: none; background: none; cursor: pointer;
-    border-radius: 10px;
-    font-size: 12px; line-height: 1.4;
+  /* ------------------------------------------------- branch-point header */
+  .hdr {
+    display: flex; align-items: flex-start; gap: 7px;
+    width: 100%;
+    margin-top: 8px;
+    padding: 4px 7px;
+    border-radius: ${UI.radiusSm};
+    font-size: 12px; line-height: 1.4; font-weight: 500;
     color: ${cssVar("--text-200")};
     transition: background ${UI.transition}, color ${UI.transition};
   }
-  .entry:hover { background: ${cssVar("--bg-300", 0.75)}; color: ${cssVar("--text-100")}; }
-
-  .dot {
-    flex: none; position: relative; z-index: 1;
-    width: 10px; height: 10px; border-radius: 50%;
-    margin: 4px 0 0 3px;
-    background: ${cssVar("--accent-main-100")};
-    box-shadow: 0 0 0 3px ${cssVar("--bg-100")};
-  }
-  .dot.assistant {
-    width: 8px; height: 8px; margin: 5px 1px 0 4px;
-    background: ${cssVar("--bg-100")};
-    border: 2px solid ${cssVar("--text-500")};
-  }
-
-  .summary { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hdr:hover { background: ${cssVar("--bg-300", 0.55)}; color: ${cssVar("--text-100")}; }
+  .fork { flex: none; color: ${cssVar("--text-500")}; font-size: 12px; margin-top: 1px; }
+  .txt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count {
     flex: none; align-self: center;
-    font-size: 10px; font-variant-numeric: tabular-nums;
-    color: ${cssVar("--text-400")};
-    background: ${cssVar("--bg-300", 0.8)};
-    border-radius: 99px; padding: 1px 7px; line-height: 14px;
+    font-size: 9.5px; font-variant-numeric: tabular-nums;
+    color: ${cssVar("--text-500")};
+    background: ${cssVar("--bg-300", 0.7)};
+    border-radius: 99px; padding: 1px 6px; line-height: 13px;
   }
 
-  /* --------------------------- always-visible numbered branch list */
-  .branches { padding: 0 0 4px 34px; display: flex; flex-direction: column; }
-  .branch {
+  /* ------------------------------------------------------ branch options */
+  .opts { margin: 1px 0 2px 20px; display: flex; flex-direction: column; }
+  .opt {
     display: flex; align-items: center; gap: 7px;
-    border: none; background: none; cursor: pointer; text-align: left;
-    padding: 3px 8px; border-radius: ${UI.radiusSm};
+    padding: 3px 8px;
+    border-left: 2px solid transparent;
+    border-radius: 0 ${UI.radiusSm} ${UI.radiusSm} 0;
     font-size: 11.5px; line-height: 1.35;
     color: ${cssVar("--text-300")};
-    opacity: 0.65;
+    opacity: 0.6;
     transition: opacity ${UI.transition}, background ${UI.transition};
   }
-  .branch:hover { opacity: 1; background: ${cssVar("--bg-300", 0.75)}; }
-  .branch .num {
-    flex: none; font-size: 10px; font-variant-numeric: tabular-nums;
-    color: ${cssVar("--text-500")}; min-width: 10px;
+  .opt:hover { opacity: 1; background: ${cssVar("--bg-300", 0.5)}; }
+  .opt .num {
+    flex: none; min-width: 10px;
+    font-size: 10px; font-variant-numeric: tabular-nums;
+    color: ${cssVar("--text-500")};
   }
-  .branch .text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .branch.current {
+  .opt.current {
     opacity: 1; cursor: default;
     color: ${cssVar("--text-100")};
-    box-shadow: inset 2px 0 0 0 ${cssVar("--accent-main-100")};
+    background: ${cssVar("--bg-200", 0.85)};
+    border-left-color: ${cssVar("--accent-main-100", 0.8)};
   }
-  .branch.current .num { color: ${cssVar("--accent-main-200")}; }
-  .branch.current:hover { background: none; }
+  .opt.current:hover { background: ${cssVar("--bg-200", 0.85)}; }
   .caret {
     display: flex; align-items: center; gap: 7px;
-    border: none; background: none; cursor: pointer; text-align: left;
-    padding: 2px 8px; border-radius: ${UI.radiusSm};
+    padding: 2px 8px; margin-left: 2px;
+    border-radius: ${UI.radiusSm};
     font-size: 10.5px; color: ${cssVar("--text-500")};
     transition: color ${UI.transition}, background ${UI.transition};
   }
-  .caret:hover { color: ${cssVar("--text-200")}; background: ${cssVar("--bg-300", 0.75)}; }
+  .caret:hover { color: ${cssVar("--text-200")}; background: ${cssVar("--bg-300", 0.5)}; }
 
-  /* ------------------------------------------------ unanchored drawer */
+  /* --------------------------------------- prompt/response pairs (subs) */
+  .subs {
+    margin: 3px 0 3px 10px;
+    padding-left: 9px;
+    border-left: 1px solid ${cssVar("--border-300")};
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .prompt {
+    display: flex; align-items: flex-start; gap: 7px;
+    width: 100%;
+    padding: 3px 7px;
+    border-radius: ${UI.radiusSm};
+    font-size: 11.5px; line-height: 1.4;
+    color: ${cssVar("--text-300")};
+    transition: background ${UI.transition}, color ${UI.transition};
+  }
+  .prompt:hover { background: ${cssVar("--bg-300", 0.55)}; color: ${cssVar("--text-100")}; }
+  .prompt .b { flex: none; color: ${cssVar("--text-500")}; line-height: 1.4; }
+  .resp {
+    display: flex; align-items: flex-start; gap: 6px;
+    width: calc(100% - 12px);
+    margin-left: 12px;
+    padding: 2px 7px 3px 5px;
+    border-radius: ${UI.radiusSm};
+    font-size: 11px; line-height: 1.4;
+    color: ${cssVar("--text-400")};
+    background: ${cssVar("--bg-200", 0.5)};
+    opacity: 0.8;
+    transition: opacity ${UI.transition}, color ${UI.transition};
+  }
+  .resp:hover { opacity: 1; color: ${cssVar("--text-200")}; }
+  .resp .l {
+    flex: none;
+    width: 7px; height: 9px;
+    margin: -1px 0 0 1px;
+    border-left: 1px solid ${cssVar("--border-200")};
+    border-bottom: 1px solid ${cssVar("--border-200")};
+    border-bottom-left-radius: 5px;
+  }
+  /* response paired with a branch header aligns under the header text */
+  .hdr-resp { margin-left: 22px; width: calc(100% - 22px); }
+
+  /* -------------------------------------------------- unanchored drawer */
   .drawer {
-    flex: none; border-top: 1px solid ${cssVar("--border-300")};
-    padding: 8px 12px; font-size: 10.5px;
-    letter-spacing: 0.05em; text-transform: uppercase;
-    color: ${cssVar("--text-500")};
+    flex: none;
+    padding: 8px 12px 10px;
+    box-shadow: 0 -1px 0 0 ${cssVar("--border-300", 0.7)};
+    font-size: 10.5px; color: ${cssVar("--text-500")};
   }
   .drawer button {
-    display: block; width: 100%; text-align: left; border: none; background: none;
-    font-size: 11.5px; text-transform: none; letter-spacing: 0;
-    color: ${cssVar("--text-300")};
-    padding: 3px 6px; margin-top: 2px; cursor: pointer; border-radius: ${UI.radiusSm};
+    display: block; width: 100%;
+    font-size: 11.5px; color: ${cssVar("--text-300")};
+    padding: 3px 6px; margin-top: 2px; border-radius: ${UI.radiusSm};
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     transition: background ${UI.transition}, color ${UI.transition};
   }
-  .drawer button:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
+  .drawer button:hover { background: ${cssVar("--bg-300", 0.6)}; color: ${cssVar("--text-100")}; }
 
-  /* ------------------------------------------------- collapsed edge tab */
-  .panel.collapsed { width: 26px; }
-  .panel.collapsed .head { padding: 10px 0; justify-content: center; }
-  .panel.collapsed .title, .panel.collapsed .list, .panel.collapsed .drawer,
-  .panel.collapsed .rail { display: none; }
-
-  /* ------------------------------------------------- compact node strip */
-  .panel.compact { width: 40px; }
-  .panel.compact .head { padding: 8px 0; justify-content: center; }
-  .panel.compact .title { display: none; }
-  .panel.compact .rail { left: 18px; }
-  .panel.compact .entry { padding: 4px 0; justify-content: center; gap: 0; }
-  .panel.compact .dot { margin: 2px 0 0 0; }
-  .panel.compact .dot.assistant { margin: 3px 0 0 0; }
-  .panel.compact .summary, .panel.compact .branches, .panel.compact .drawer { display: none; }
-  .panel.compact .count {
-    position: absolute; right: 2px; top: -1px;
-    padding: 0 4px; line-height: 12px; font-size: 8.5px;
+  /* ------------------------------------------------------- icon strip */
+  .mini {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; padding: 4px 0;
   }
-  .panel.compact.collapsed { width: 26px; }
+  .mini .d {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: ${cssVar("--text-500", 0.6)};
+    transition: background ${UI.transition}, transform ${UI.transition};
+  }
+  .mini .f { font-size: 11px; line-height: 1; color: ${cssVar("--text-400")}; }
+  .mini:hover .d { background: ${cssVar("--text-200")}; transform: scale(1.25); }
+  .mini:hover .f { color: ${cssVar("--text-100")}; }
 `;
 
 export class TreePanelFeature implements Feature {
@@ -212,8 +238,12 @@ export class TreePanelFeature implements Feature {
   private enabled = false;
   private host: HTMLElement | null = null;
   private shadow: ShadowRoot | null = null;
+  /** User preference: keep the panel as the icon strip. Persisted. */
   private collapsed = false;
-  /** Message uuids whose branch list is expanded beyond the first two. */
+  private mode: PanelMode = "hidden";
+  /** Whether the full panel would fit (controls the expand chevron). */
+  private fullFits = false;
+  /** Message uuids whose branch-option list is expanded beyond the first two. */
   private expandedBranches = new Set<string>();
   private drawerItems: Array<{ noteId: string; label: string }> = [];
   private lastSignature = "";
@@ -264,29 +294,56 @@ export class TreePanelFeature implements Feature {
     /* handled via the conversation-changed bus event */
   }
 
-  /* -------------------------------------------------------- positioning */
+  /* ------------------------------------------------- geometry & modes */
 
   private onTick(): void {
     if (!this.enabled || !this.host) return;
     const sc = this.ctx.domMap.scrollContainer;
+    const column = this.ctx.domMap.container;
     const panel = this.shadow?.querySelector<HTMLElement>(".panel");
     if (!panel) return;
-    if (!sc || !this.ctx.getCurrentConversation()) {
-      if (panel.style.display !== "none") panel.style.display = "none";
+    if (!sc || !column || !this.ctx.getCurrentConversation()) {
+      this.setMode(panel, "hidden");
       return;
     }
-    // read phase — full viewport height below the site header
-    const rect = sc.getBoundingClientRect();
-    const top = Math.round(rect.top + 8);
-    const left = `${Math.round(rect.left + 10)}px`;
+
+    // read phase — the space actually available left of the chat column
+    const scRect = sc.getBoundingClientRect();
+    const gap = column.getBoundingClientRect().left - scRect.left;
+    const pathLength = this.ctx.getTree()?.visiblePath().length ?? 0;
+    this.fullFits =
+      gap >= FULL_WIDTH + 24 &&
+      window.innerWidth >= MIN_VIEWPORT_FOR_FULL &&
+      pathLength >= MIN_MESSAGES_FOR_FULL;
+    const stripFits = gap >= STRIP_WIDTH + 16;
+    const mode: PanelMode = !stripFits
+      ? "hidden"
+      : this.collapsed || !this.fullFits
+        ? "strip"
+        : "full";
+
+    const top = Math.round(scRect.top + 8);
+    const left = `${Math.round(scRect.left + 10)}px`;
     const topPx = `${top}px`;
     const height = `${Math.max(160, window.innerHeight - top - 12)}px`;
+
     // write phase (guarded)
-    if (panel.style.display !== "flex") panel.style.display = "flex";
+    this.setMode(panel, mode);
+    if (mode === "hidden") return;
     if (panel.style.left !== left) panel.style.left = left;
     if (panel.style.top !== topPx) panel.style.top = topPx;
     if (panel.style.height !== height) panel.style.height = height;
     this.render(); // signature check makes this cheap when nothing changed
+  }
+
+  private setMode(panel: HTMLElement, mode: PanelMode): void {
+    if (this.mode !== mode) {
+      this.mode = mode;
+      this.lastSignature = "";
+      this.render();
+    }
+    const display = mode === "hidden" ? "none" : "flex";
+    if (panel.style.display !== display) panel.style.display = display;
   }
 
   /* ------------------------------------------------------------ render */
@@ -307,10 +364,6 @@ export class TreePanelFeature implements Feature {
     return this.shadow;
   }
 
-  private isCompact(pathLength: number): boolean {
-    return window.innerWidth < COMPACT_VIEWPORT || pathLength < COMPACT_MIN_MESSAGES;
-  }
-
   private summarize(uuid: string, text: string, maxWords: number): string {
     const key = `${uuid}:${maxWords}:${text.length}`;
     let value = this.summaryCache.get(key);
@@ -322,18 +375,41 @@ export class TreePanelFeature implements Feature {
     return value;
   }
 
+  /** Pairs each prompt with its immediate response. */
+  private buildPairs(path: TreeNode[]): Pair[] {
+    const pairs: Pair[] = [];
+    for (let i = 0; i < path.length; i++) {
+      const node = path[i]!;
+      if (node.sender === "human" && path[i + 1]?.sender === "assistant") {
+        pairs.push({ prompt: node, response: path[i + 1]! });
+        i++;
+      } else {
+        pairs.push({ prompt: node, response: null });
+      }
+    }
+    return pairs;
+  }
+
+  private branchCount(uuid: string): number {
+    return this.ctx.getTree()?.siblingsOf(uuid).length ?? 1;
+  }
+
   private doRender(): void {
     if (!this.enabled) return;
+    // The host must exist even while hidden — onTick computes the mode from
+    // geometry and needs the host/panel to write to.
     const shadow = this.ensureHost();
     if (!shadow) return;
+    if (this.mode === "hidden") return;
     const panel = shadow.querySelector<HTMLElement>(".panel")!;
     const tree = this.ctx.getTree();
     const path = tree ? tree.visiblePath() : [];
-    const compact = this.isCompact(path.length);
+    const pairs = this.buildPairs(path);
+    const strip = this.mode === "strip";
 
     const signature = JSON.stringify({
-      c: this.collapsed,
-      k: compact,
+      m: this.mode,
+      f: this.fullFits,
       d: this.drawerItems,
       x: [...this.expandedBranches],
       p: path.map((n) => {
@@ -343,45 +419,29 @@ export class TreePanelFeature implements Feature {
           n.sender,
           this.summarize(n.uuid, n.text, 6),
           sibs.map((s) => [s.uuid, this.summarize(s.uuid, s.text, 4)]),
-          sibs.findIndex((s) => s.uuid === n.uuid),
         ];
       }),
     });
     if (signature === this.lastSignature) return;
     this.lastSignature = signature;
 
-    panel.classList.toggle("collapsed", this.collapsed);
-    panel.classList.toggle("compact", compact);
+    panel.classList.toggle("strip", strip);
 
+    const chevGlyph = strip ? "»" : "«";
+    const chevOff = strip && !this.fullFits ? " off" : "";
     let html = `
       <div class="head">
-        <span class="title">Prompt History</span>
-        <button class="chev" data-act="toggle"
-                title="${this.collapsed ? "Expand" : "Collapse"} Prompt History"
-                aria-label="${this.collapsed ? "Expand" : "Collapse"} Prompt History">${this.collapsed ? "»" : "«"}</button>
+        <span class="title">Prompt history</span>
+        <button class="chev${chevOff}" data-act="toggle"
+                title="${strip ? "Expand" : "Collapse"} prompt history"
+                aria-label="${strip ? "Expand" : "Collapse"} prompt history">${chevGlyph}</button>
       </div>
-      <div class="list"><span class="rail"></span>`;
+      <div class="list">`;
 
-    for (const node of path) {
-      const sibs = tree!.siblingsOf(node.uuid);
-      const idx = sibs.findIndex((s) => s.uuid === node.uuid);
-      const summary = escapeHtml(this.summarize(node.uuid, node.text, 6));
-      const count =
-        sibs.length > 1
-          ? `<span class="count" title="${sibs.length} branches">${idx + 1}/${sibs.length}</span>`
-          : "";
-      html += `
-        <button class="entry" data-act="jump" data-uuid="${node.uuid}"
-                title="${escapeHtml(this.summarize(node.uuid, node.text, 12))}">
-          <span class="dot ${node.sender === "assistant" ? "assistant" : ""}"></span>
-          <span class="summary">${summary}</span>
-          ${count}
-        </button>`;
-      if (!compact && sibs.length > 1) html += this.renderBranchList(node, sibs);
-    }
+    html += strip ? this.renderStrip(pairs) : this.renderFull(pairs);
     html += `</div>`;
 
-    if (!this.collapsed && this.drawerItems.length) {
+    if (!strip && this.drawerItems.length) {
       html += `<div class="drawer">Unanchored notes`;
       for (const item of this.drawerItems) {
         html += `<button data-act="open-note" data-note="${escapeHtml(item.noteId)}">${escapeHtml(item.label)}</button>`;
@@ -398,31 +458,122 @@ export class TreePanelFeature implements Feature {
     });
   }
 
-  /** The always-visible numbered branch list under an entry. */
-  private renderBranchList(node: TreeNode, sibs: TreeNode[]): string {
+  /* --------------------------------------------------- full-mode markup */
+
+  private renderFull(pairs: Pair[]): string {
+    let html = "";
+    let subs = ""; // open run of ordinary pairs under the current section
+    const flushSubs = () => {
+      if (subs) {
+        html += `<div class="subs">${subs}</div>`;
+        subs = "";
+      }
+    };
+    for (const pair of pairs) {
+      if (this.branchCount(pair.prompt.uuid) > 1) {
+        // branch point → section header + options + its own response
+        flushSubs();
+        html += this.renderHeaderRow(pair.prompt);
+        html += this.renderOptions(pair.prompt);
+        if (pair.response) {
+          html += this.renderResponseRow(pair.response, true);
+          if (this.branchCount(pair.response.uuid) > 1) html += this.renderOptions(pair.response);
+        }
+      } else {
+        subs += this.renderPromptRow(pair.prompt);
+        if (pair.response) {
+          subs += this.renderResponseRow(pair.response, false);
+          if (this.branchCount(pair.response.uuid) > 1) {
+            flushSubs(); // options render at section level for alignment
+            html += this.renderOptions(pair.response);
+          }
+        }
+      }
+    }
+    flushSubs();
+    return html;
+  }
+
+  private renderHeaderRow(node: TreeNode): string {
+    const sibs = this.ctx.getTree()!.siblingsOf(node.uuid);
+    const idx = sibs.findIndex((s) => s.uuid === node.uuid);
+    return `
+      <button class="hdr" data-act="jump" data-uuid="${node.uuid}"
+              title="${escapeHtml(this.summarize(node.uuid, node.text, 12))}">
+        <span class="fork">⑂</span>
+        <span class="txt">${escapeHtml(this.summarize(node.uuid, node.text, 6))}</span>
+        <span class="count">${idx + 1}/${sibs.length}</span>
+      </button>`;
+  }
+
+  private renderPromptRow(node: TreeNode): string {
+    return `
+      <button class="prompt" data-act="jump" data-uuid="${node.uuid}"
+              title="${escapeHtml(this.summarize(node.uuid, node.text, 12))}">
+        <span class="b">·</span>
+        <span class="txt">${escapeHtml(this.summarize(node.uuid, node.text, 6))}</span>
+      </button>`;
+  }
+
+  private renderResponseRow(node: TreeNode, underHeader: boolean): string {
+    const sibs = this.ctx.getTree()!.siblingsOf(node.uuid);
+    const count =
+      sibs.length > 1
+        ? `<span class="count">${sibs.findIndex((s) => s.uuid === node.uuid) + 1}/${sibs.length}</span>`
+        : "";
+    return `
+      <button class="resp${underHeader ? " hdr-resp" : ""}" data-act="jump" data-uuid="${node.uuid}"
+              title="${escapeHtml(this.summarize(node.uuid, node.text, 12))}">
+        <span class="l"></span>
+        <span class="txt">${escapeHtml(this.summarize(node.uuid, node.text, 6))}</span>
+        ${count}
+      </button>`;
+  }
+
+  /** Numbered branch options: first two, the rest behind a caret. */
+  private renderOptions(node: TreeNode): string {
+    const sibs = this.ctx.getTree()!.siblingsOf(node.uuid);
     const expanded = this.expandedBranches.has(node.uuid);
-    const shown = expanded ? sibs : sibs.slice(0, BRANCHES_SHOWN_COLLAPSED);
+    const shown = expanded ? sibs : sibs.slice(0, OPTIONS_SHOWN_COLLAPSED);
     const hidden = sibs.length - shown.length;
-    let html = `<div class="branches">`;
-    for (let i = 0; i < shown.length; i++) {
-      const sib = shown[i]!;
+    let html = `<div class="opts">`;
+    for (const sib of shown) {
       const current = sib.uuid === node.uuid;
       html += `
-        <button class="branch ${current ? "current" : ""}"
+        <button class="opt${current ? " current" : ""}"
                 ${current ? "" : `data-act="switch" data-uuid="${sib.uuid}"`}
                 title="${escapeHtml(this.summarize(sib.uuid, sib.text, 12))}">
           <span class="num">${sibs.indexOf(sib) + 1}</span>
-          <span class="text">${escapeHtml(this.summarize(sib.uuid, sib.text, 4))}</span>
+          <span class="txt">${escapeHtml(this.summarize(sib.uuid, sib.text, 4))}</span>
         </button>`;
     }
     if (hidden > 0) {
       html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▸ ${hidden} more</button>`;
-    } else if (expanded && sibs.length > BRANCHES_SHOWN_COLLAPSED) {
+    } else if (expanded && sibs.length > OPTIONS_SHOWN_COLLAPSED) {
       html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▾ show less</button>`;
     }
     html += `</div>`;
     return html;
   }
+
+  /* -------------------------------------------------- strip-mode markup */
+
+  private renderStrip(pairs: Pair[]): string {
+    let html = "";
+    for (const pair of pairs) {
+      const branched =
+        this.branchCount(pair.prompt.uuid) > 1 ||
+        (pair.response ? this.branchCount(pair.response.uuid) > 1 : false);
+      const label = this.summarize(pair.prompt.uuid, pair.prompt.text, 8);
+      html += `
+        <button class="mini" data-act="jump" data-uuid="${pair.prompt.uuid}" title="${escapeHtml(label)}">
+          ${branched ? `<span class="f">⑂</span>` : `<span class="d"></span>`}
+        </button>`;
+    }
+    return html;
+  }
+
+  /* ------------------------------------------------------------ actions */
 
   private handleAction(act: string, uuid: string, noteId: string): void {
     const tree = this.ctx.getTree();
@@ -431,6 +582,8 @@ export class TreePanelFeature implements Feature {
         this.collapsed = !this.collapsed;
         this.lastSignature = "";
         void setPanelCollapsed(this.collapsed);
+        // recompute mode immediately so the toggle feels instant
+        this.mode = this.collapsed || !this.fullFits ? "strip" : "full";
         this.render();
         break;
       case "expand":
@@ -458,7 +611,8 @@ export class TreePanelFeature implements Feature {
     const rowRect = row.el.getBoundingClientRect();
     const scRect = sc.getBoundingClientRect();
     sc.scrollTo({ top: sc.scrollTop + (rowRect.top - scRect.top) - 24, behavior: "smooth" });
-    // Pulse only the message text, not the row's control space.
+    // Pulse the message box itself (full bubble for prompts, text block for
+    // responses) — never the control space beneath it.
     const target = this.ctx.domMap.contentElOf(row);
     target.classList.remove("pt-highlight-pulse");
     requestAnimationFrame(() => {

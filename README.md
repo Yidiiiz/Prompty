@@ -7,11 +7,13 @@ power-user tools built on its real conversation structure:
   messages using the full main composer (attachments, long text, paste) instead
   of the small inline edit box. The target message ghosts, everything below it
   hides, and your next send becomes a sibling of it.
-- **Prompt History panel** — a collapsible, full-height overlay on the left
-  edge of the chat showing the active conversation path. Messages with
-  branches list them right beneath the entry (numbered, first two visible,
-  caret for the rest); click any branch to jump straight to it — no page
-  reload — or click an entry to scroll to that message.
+- **Prompt history panel** — a quiet, full-height overlay in the chat's left
+  margin. Prompts and their responses are shown as pairs (the response nests
+  under its prompt, dimmer); messages with branches become section headers
+  with their numbered branch options beneath (first two visible, caret for
+  the rest). Click a branch to jump straight to it — no page reload — or
+  click any row to scroll to that message. Collapses to an icon strip, and
+  steps down to the strip or hides itself when the window is too narrow.
 - **Notes** — highlight text in an assistant reply and ask a small margin
   question about it. The Q&A is sent as a *side branch* of the conversation
   tree, so it is **never part of the main thread's context**, yet it persists
@@ -58,13 +60,15 @@ extension card, then reload the claude.ai tab.
   in its toolbar. A header bar appears above the composer ("Branching from: …")
   with a Cancel button. Type and send normally; the send becomes a branch.
   Native `‹ 2/3 ›` arrows and the panel now show the siblings.
-- **Prompt History panel**: spans the page height beside the chat; the chevron
-  collapses it to an edge tab (state persists). It auto-compacts to a dot
-  strip on narrow windows (<1100px) or short chats (<4 messages). Messages
-  with branches show a numbered branch list underneath — the first two plus a
-  `▸ N more` caret; click a branch to switch to it in place (the extension
-  drives the native `‹ ›` version arrows for you, stepping directly from any
-  branch to any other).
+- **Prompt history panel**: spans the page height beside the chat; the chevron
+  collapses it to an icon strip (one dot per prompt/response pair, fork
+  glyphs at branch points — state persists). It steps down to the strip on
+  narrow windows or short chats, and hides entirely when not even the strip
+  fits. Branch-point headers show numbered options underneath — the first two
+  plus a `▸ N more` caret; click one to switch in place (the extension drives
+  the native `‹ ›` version arrows for you, stepping directly from any branch
+  to any other). Clicking a prompt row highlights its whole bubble; a
+  response row highlights just the reply text.
 - **Notes**: select text in an assistant reply → click the ✎ button in the
   right margin (next to, never over, the native selection popover) → type the
   question in the margin composer (⌘/Ctrl-Enter sends). The answer streams into

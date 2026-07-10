@@ -19,11 +19,11 @@
  * the mode reactivates (override re-armed) and the native error stays
  * visible; the draft is never touched.
  */
-import { cssVar, FONT_SANS, UI } from "../../shared/tokens";
+import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { summarizer } from "../../shared/summary";
 import { q } from "../../shared/selectors";
 import { toastOnce } from "../toast";
-import { getComposerDock } from "../composer";
+import { getComposerDockRect } from "../composer";
 import { subscribe } from "../observer";
 import type { Ctx, Feature } from "../ctx";
 
@@ -194,29 +194,52 @@ export class BranchComposeFeature implements Feature {
     this.headerHost = null;
   }
 
+  /** Keeps the floating header aligned just above the prompt box. */
+  private positionHeader(): void {
+    if (!this.headerHost) return;
+    const dockRect = getComposerDockRect();
+    if (!dockRect) return;
+    const width = Math.min(dockRect.width, 720);
+    const left = `${Math.round(dockRect.left + (dockRect.width - width) / 2)}px`;
+    // stack above the draft-restore banner when both are showing
+    const banner = document.getElementById("pt-draft-banner");
+    const lift = banner ? banner.offsetHeight + 8 : 0;
+    const bottom = `${Math.round(window.innerHeight - dockRect.top + 8 + lift)}px`;
+    const widthPx = `${Math.round(width)}px`;
+    const style = this.headerHost.style;
+    if (style.left !== left) style.left = left;
+    if (style.bottom !== bottom) style.bottom = bottom;
+    if (style.width !== widthPx) style.width = widthPx;
+  }
+
   private ensureHeader(mode: ModeState): void {
-    if (this.headerHost?.isConnected) return;
-    const dock = getComposerDock();
-    if (!dock?.parentElement) {
-      toastOnce("branch-dock", "Prompt Tree: composer dock not found — the branching header can't be shown.");
+    if (this.headerHost?.isConnected) {
+      this.positionHeader();
+      return;
+    }
+    if (!getComposerDockRect()) {
+      toastOnce("branch-dock", "Prompt Tree: composer not found — the branching header can't be shown.");
       return;
     }
     const label = summarizer.summarize(this.ctx.getTree()?.nodes.get(mode.targetUuid)?.text ?? "", 8);
     const host = document.createElement("div");
     host.id = "pt-branch-header";
+    // floats above the prompt box instead of sitting inside its container
+    host.style.cssText = `position:fixed;z-index:${Z_PANEL};pointer-events:none;`;
     const shadow = host.attachShadow({ mode: "open" });
     shadow.innerHTML = `
       <style>
-        :host { all: initial; display: block; }
+        :host { all: initial; }
         .bar {
+          pointer-events: auto;
           display: flex; align-items: center; gap: 10px;
           font-family: ${FONT_SANS}; font-size: 12.5px; line-height: 1.4;
-          color: ${cssVar("--text-200")};
-          background: ${cssVar("--bg-200", 0.95)};
-          border: 1px solid ${cssVar("--border-300")};
-          box-shadow: inset 3px 0 0 0 ${cssVar("--accent-main-100")}, ${UI.shadowSm};
-          border-radius: ${UI.radiusMd};
-          padding: 7px 8px 7px 14px; margin: 0 0 8px 0;
+          color: ${cssVar("--text-100")};
+          background: ${cssVar("--bg-200", 0.97)};
+          backdrop-filter: blur(8px);
+          box-shadow: inset 3px 0 0 0 ${cssVar("--accent-main-100", 0.8)}, ${UI.shadowMd};
+          border-radius: 0 ${UI.radiusMd} ${UI.radiusMd} 0;
+          padding: 7px 8px 7px 14px;
           white-space: nowrap; overflow: hidden;
           animation: pt-bar-in 160ms ease-out;
         }
@@ -245,7 +268,8 @@ export class BranchComposeFeature implements Feature {
       </div>`;
     shadow.querySelector("em")!.textContent = `“${label}”`;
     shadow.querySelector("button")!.addEventListener("click", () => this.cancel());
-    dock.parentElement.insertBefore(host, dock);
+    document.body.appendChild(host);
     this.headerHost = host;
+    this.positionHeader();
   }
 }

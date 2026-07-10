@@ -26,9 +26,15 @@ const CSS = `
   transition: opacity 120ms ease;
 }
 
+/* The element's own border-radius (a bubble's rounding) clips the pulse
+   background automatically; the fallback radius below only softens elements
+   that have none. Applied via a low-specificity where() so a real radius on
+   the bubble always wins. */
+:where(.pt-highlight-pulse) {
+  border-radius: 8px;
+}
 .pt-highlight-pulse {
   animation: pt-pulse 0.6s ease-out 1;
-  border-radius: 8px;
 }
 @keyframes pt-pulse {
   0% { background-color: ${cssVar("--accent-main-100", 0.12)}; }

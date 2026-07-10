@@ -28,7 +28,7 @@
  * degrades to a notice when the app ignores it.
  */
 import { debounce } from "../../shared/util";
-import { cssVar, FONT_SANS, UI } from "../../shared/tokens";
+import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { sel } from "../../shared/selectors";
 import {
   clearDraft,
@@ -41,7 +41,14 @@ import {
 } from "../../shared/storage";
 import { subscribe } from "../observer";
 import { toastOnce } from "../toast";
-import { attachFilesToComposer, getComposerDock, getComposerEl, getComposerText, setComposerText } from "../composer";
+import {
+  attachFilesToComposer,
+  getComposerDock,
+  getComposerDockRect,
+  getComposerEl,
+  getComposerText,
+  setComposerText,
+} from "../composer";
 import type { Ctx, Feature } from "../ctx";
 import type { BranchComposeFeature } from "./branch-compose";
 import type { GutterAnchor, NoteCardManager } from "./note-cards";
@@ -150,8 +157,11 @@ export class DraftsFeature implements Feature {
         if (this.enabled) this.saveMain();
       });
     }
-    // keep the banner docked if the composer remounts
-    if (this.bannerHost && !this.bannerHost.isConnected) this.dockBanner();
+    // keep the floating banner aligned above the prompt box
+    if (this.bannerHost) {
+      if (!this.bannerHost.isConnected) document.body.appendChild(this.bannerHost);
+      this.positionBanner();
+    }
   }
 
   private isInComposer(target: EventTarget | null): boolean {
@@ -275,6 +285,8 @@ export class DraftsFeature implements Feature {
     this.removeBanner();
     const host = document.createElement("div");
     host.id = "pt-draft-banner";
+    // floats above the prompt box instead of sitting inside its container
+    host.style.cssText = `position:fixed;z-index:${Z_PANEL};pointer-events:none;`;
     const shadow = host.attachShadow({ mode: "open" });
     const firstLine = (draft.text.split("\n").find((l) => l.trim()) ?? "(attachments only)").slice(0, 120);
     const extras: string[] = [];
@@ -282,16 +294,17 @@ export class DraftsFeature implements Feature {
     if (draft.attachmentsSkipped) extras.push("attachments not saved");
     shadow.innerHTML = `
       <style>
-        :host { all: initial; display: block; }
+        :host { all: initial; }
         .banner {
+          pointer-events: auto;
           display: flex; align-items: center; gap: 10px;
           font-family: ${FONT_SANS}; font-size: 12px; line-height: 1.4;
-          color: ${cssVar("--text-300")};
-          background: ${cssVar("--bg-200", 0.95)};
-          border: 1px solid ${cssVar("--border-300")};
-          border-radius: ${UI.radiusMd};
-          box-shadow: ${UI.shadowSm};
-          padding: 6px 8px 6px 12px; margin: 0 0 8px 0;
+          color: ${cssVar("--text-200")};
+          background: ${cssVar("--bg-200", 0.97)};
+          backdrop-filter: blur(8px);
+          box-shadow: inset 3px 0 0 0 ${cssVar("--accent-secondary-100", 0.7)}, ${UI.shadowMd};
+          border-radius: 0 ${UI.radiusMd} ${UI.radiusMd} 0;
+          padding: 6px 8px 6px 12px;
           overflow: hidden; white-space: nowrap;
           animation: pt-banner-in 160ms ease-out;
         }
@@ -329,13 +342,23 @@ export class DraftsFeature implements Feature {
     });
     this.bannerHost = host;
     this.bannerForConversation = draft.conversationUuid;
-    this.dockBanner();
+    document.body.appendChild(host);
+    this.positionBanner();
   }
 
-  private dockBanner(): void {
+  /** Keeps the floating banner aligned just above the prompt box. */
+  private positionBanner(): void {
     if (!this.bannerHost) return;
-    const dock = getComposerDock();
-    if (dock?.parentElement) dock.parentElement.insertBefore(this.bannerHost, dock);
+    const dockRect = getComposerDockRect();
+    if (!dockRect) return;
+    const width = Math.min(dockRect.width, 720);
+    const left = `${Math.round(dockRect.left + (dockRect.width - width) / 2)}px`;
+    const bottom = `${Math.round(window.innerHeight - dockRect.top + 8)}px`;
+    const widthPx = `${Math.round(width)}px`;
+    const style = this.bannerHost.style;
+    if (style.left !== left) style.left = left;
+    if (style.bottom !== bottom) style.bottom = bottom;
+    if (style.width !== widthPx) style.width = widthPx;
   }
 
   private removeBanner(): void {

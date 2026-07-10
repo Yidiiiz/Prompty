@@ -25,13 +25,19 @@ export function getComposerText(): string {
 }
 
 /**
- * The element the composer visually lives in — banners insert before this.
- * Prefers the enclosing form; falls back one structural level up.
+ * The element the composer visually lives in (the prompt box). Prefers the
+ * enclosing form; falls back one structural level up.
  */
 export function getComposerDock(): HTMLElement | null {
   const el = getComposerEl();
   if (!el) return null;
   return el.closest("form") ?? el.parentElement;
+}
+
+/** Viewport rect of the prompt box — for floating UI that must clear it. */
+export function getComposerDockRect(): DOMRect | null {
+  const dock = getComposerDock();
+  return dock ? dock.getBoundingClientRect() : null;
 }
 
 /** Replaces the composer's content with `text`. Returns success. */

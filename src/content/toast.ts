@@ -27,7 +27,7 @@ function ensureHost(): ShadowRoot | null {
     :host { all: initial; }
     .stack {
       position: fixed;
-      bottom: 96px;
+      top: 68px; /* below the site header; warnings surface at the top */
       left: 50%;
       transform: translateX(-50%);
       z-index: ${Z_EXTENSION_OVERLAY};
@@ -42,10 +42,9 @@ function ensureHost(): ShadowRoot | null {
       font-family: ${FONT_SANS};
       font-size: 12.5px;
       line-height: 1.45;
-      color: ${cssVar("--text-100")};
-      background: ${cssVar("--bg-000", 0.96)};
+      color: ${cssVar("--text-200")};
+      background: ${cssVar("--bg-100", 0.97)};
       backdrop-filter: blur(8px);
-      border: 1px solid ${cssVar("--border-300")};
       border-radius: ${UI.radiusMd};
       box-shadow: ${UI.shadowMd};
       padding: 10px 14px;
@@ -59,8 +58,8 @@ function ensureHost(): ShadowRoot | null {
       content: "";
       flex: none;
       align-self: center;
-      width: 7px; height: 7px; border-radius: 50%;
-      background: ${cssVar("--accent-main-100")};
+      width: 6px; height: 6px; border-radius: 50%;
+      background: ${cssVar("--accent-main-100", 0.75)};
     }
     .toast .close {
       cursor: pointer;
@@ -76,7 +75,7 @@ function ensureHost(): ShadowRoot | null {
     }
     .toast .close:hover { color: ${cssVar("--text-100")}; background: ${cssVar("--bg-300")}; }
     @keyframes life {
-      0% { opacity: 0; transform: translateY(6px); }
+      0% { opacity: 0; transform: translateY(-6px); }
       4% { opacity: 1; transform: translateY(0); }
       92% { opacity: 1; }
       100% { opacity: 0; }
