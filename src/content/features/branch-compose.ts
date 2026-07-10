@@ -1,0 +1,242 @@
+/**
+ * content/features/branch-compose.ts — Feature 1: write a branch (an
+ * alternative to an existing user message) using the full-power main
+ * composer instead of the small inline edit box.
+ *
+ * Mechanism: reconnaissance confirmed a native edit is just a completion send
+ * whose parent_message_uuid is the edited message's parent. Activating branch
+ * mode arms a parent override in the page script; the user's next normal send
+ * leaves the browser with its parent_message_uuid rewritten to the ghosted
+ * message's parent — attachments and every other field pass through
+ * untouched. No keystroke simulation, ever.
+ *
+ * Visual state (ghost + hidden rows + header bar) is REAPPLIED from the
+ * uuid-keyed mode state on every observer tick, so scrolling/re-renders never
+ * lose it.
+ *
+ * Failure behavior: if the hover toolbar or composer dock hooks are missing,
+ * the entry button simply does not appear (one-time toast). If a send fails,
+ * the mode reactivates (override re-armed) and the native error stays
+ * visible; the draft is never touched.
+ */
+import { cssVar, FONT_SANS } from "../../shared/tokens";
+import { summarizer } from "../../shared/summary";
+import { q } from "../../shared/selectors";
+import { toastOnce } from "../toast";
+import { getComposerDock } from "../composer";
+import { subscribe } from "../observer";
+import type { Ctx, Feature } from "../ctx";
+
+interface ModeState {
+  conversationUuid: string;
+  targetUuid: string;
+  parentUuid: string;
+  /** Set once a rewritten send has left; used to reactivate on failure. */
+  awaitingOutcome: boolean;
+}
+
+const BTN_CLASS = "pt-branch-btn";
+
+export class BranchComposeFeature implements Feature {
+  readonly id = "branchCompose" as const;
+
+  private enabled = false;
+  private mode: ModeState | null = null;
+  private headerHost: HTMLElement | null = null;
+
+  constructor(private ctx: Ctx) {
+    subscribe(() => this.onTick());
+
+    ctx.bus.on("send-observed", (msg) => {
+      if (!this.mode || msg.conversationUuid !== this.mode.conversationUuid) return;
+      if (msg.rewriteApplied) {
+        // The branch send has left the browser. Clear the UI immediately so
+        // the streaming reply is visible; keep state to reactivate on failure.
+        this.mode.awaitingOutcome = true;
+        this.clearVisuals();
+      }
+    });
+    ctx.bus.on("stream-done", (msg) => {
+      if (this.mode?.awaitingOutcome && msg.conversationUuid === this.mode.conversationUuid) {
+        this.mode = null; // success — fully exited
+      }
+    });
+    ctx.bus.on("send-failed", (msg) => {
+      if (this.mode?.awaitingOutcome && msg.conversationUuid === this.mode.conversationUuid) {
+        // Stay in branch mode: re-arm the override (the page consumed it) and
+        // restore visuals. The native error surface and the draft are untouched.
+        this.mode.awaitingOutcome = false;
+        this.ctx.sendToPage({
+          type: "set-parent-override",
+          conversationUuid: this.mode.conversationUuid,
+          parentMessageUuid: this.mode.parentUuid,
+        });
+      }
+    });
+  }
+
+  setEnabled(on: boolean): void {
+    if (this.enabled === on) return;
+    this.enabled = on;
+    if (!on) {
+      this.cancel();
+      for (const btn of document.querySelectorAll(`.${BTN_CLASS}`)) btn.remove();
+    }
+  }
+
+  onConversation(): void {
+    // Exiting cleanly on navigation: the target uuid belongs to the old chat.
+    this.cancel();
+  }
+
+  /* ------------------------------------------------------------- entry */
+
+  private onTick(): void {
+    if (!this.enabled) return;
+    this.injectButtons();
+    if (this.mode && !this.mode.awaitingOutcome) this.applyVisuals();
+  }
+
+  private injectButtons(): void {
+    // The hover toolbar containing the native edit control is the anchor; a
+    // button is added beside it for every user message row we can map.
+    for (const row of this.ctx.domMap.rows) {
+      if (row.sender !== "human" || !row.uuid) continue;
+      const editBtn = q<HTMLElement>("actionBarEdit", row.el);
+      const toolbar = editBtn?.parentElement;
+      if (!toolbar || toolbar.querySelector(`.${BTN_CLASS}`)) continue;
+      const btn = document.createElement("button");
+      btn.className = BTN_CLASS;
+      btn.type = "button";
+      btn.title = "Compose a branch of this message in the main composer";
+      btn.innerHTML =
+        `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">` +
+        `<path d="M4 13V6"/><circle cx="4" cy="14" r="1.6"/><circle cx="4" cy="4" r="1.6"/>` +
+        `<circle cx="12" cy="6" r="1.6"/><path d="M4 11c0-3 8-2 8-4"/></svg>` +
+        `<span>Branch from here</span>`;
+      btn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const targetRow = this.ctx.domMap.rowForElement(btn);
+        if (targetRow?.uuid) this.activate(targetRow.uuid);
+      });
+      toolbar.appendChild(btn);
+    }
+  }
+
+  /* -------------------------------------------------------------- mode */
+
+  activate(targetUuid: string): void {
+    const conversationUuid = this.ctx.getCurrentConversation();
+    const tree = this.ctx.getTree();
+    const node = tree?.nodes.get(targetUuid);
+    if (!conversationUuid || !tree || !node) {
+      toastOnce("branch-activate", "Prompt Tree: couldn't resolve that message in the conversation tree.");
+      return;
+    }
+    this.cancel(); // per-activation mode: entering replaces any prior state
+    this.mode = {
+      conversationUuid,
+      targetUuid,
+      parentUuid: node.parentUuid, // sentinel uuid when branching the first message
+      awaitingOutcome: false,
+    };
+    this.ctx.sendToPage({
+      type: "set-parent-override",
+      conversationUuid,
+      parentMessageUuid: node.parentUuid,
+    });
+    this.applyVisuals();
+  }
+
+  cancel(): void {
+    if (!this.mode) return;
+    this.ctx.sendToPage({
+      type: "set-parent-override",
+      conversationUuid: this.mode.conversationUuid,
+      parentMessageUuid: null,
+    });
+    this.mode = null;
+    this.clearVisuals();
+  }
+
+  isActive(): boolean {
+    return this.mode !== null && !this.mode.awaitingOutcome;
+  }
+
+  /** For the drafts feature: what would this send branch from? */
+  currentTarget(): { targetUuid: string; parentUuid: string } | null {
+    return this.mode && !this.mode.awaitingOutcome
+      ? { targetUuid: this.mode.targetUuid, parentUuid: this.mode.parentUuid }
+      : null;
+  }
+
+  /* ----------------------------------------------------------- visuals */
+
+  private applyVisuals(): void {
+    const mode = this.mode;
+    if (!mode) return;
+    const rows = this.ctx.domMap.rows;
+    const targetIdx = rows.findIndex((r) => r.uuid === mode.targetUuid);
+    for (let i = 0; i < rows.length; i++) {
+      const el = rows[i]!.el;
+      const ghost = targetIdx >= 0 && i === targetIdx;
+      const hidden = targetIdx >= 0 && i > targetIdx;
+      if (el.classList.contains("pt-branch-ghost") !== ghost) el.classList.toggle("pt-branch-ghost", ghost);
+      if (el.classList.contains("pt-branch-hidden") !== hidden) el.classList.toggle("pt-branch-hidden", hidden);
+    }
+    this.ensureHeader(mode);
+  }
+
+  private clearVisuals(): void {
+    for (const el of document.querySelectorAll(".pt-branch-ghost")) el.classList.remove("pt-branch-ghost");
+    for (const el of document.querySelectorAll(".pt-branch-hidden")) el.classList.remove("pt-branch-hidden");
+    this.headerHost?.remove();
+    this.headerHost = null;
+  }
+
+  private ensureHeader(mode: ModeState): void {
+    if (this.headerHost?.isConnected) return;
+    const dock = getComposerDock();
+    if (!dock?.parentElement) {
+      toastOnce("branch-dock", "Prompt Tree: composer dock not found — the branching header can't be shown.");
+      return;
+    }
+    const label = summarizer.summarize(this.ctx.getTree()?.nodes.get(mode.targetUuid)?.text ?? "", 8);
+    const host = document.createElement("div");
+    host.id = "pt-branch-header";
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>
+        :host { all: initial; display: block; }
+        .bar {
+          display: flex; align-items: center; gap: 8px;
+          font-family: ${FONT_SANS}; font-size: 12.5px;
+          color: ${cssVar("--text-200")};
+          background: ${cssVar("--bg-200")};
+          border: 1px solid ${cssVar("--border-300")};
+          border-left: 3px solid ${cssVar("--accent-main-100")};
+          border-radius: 10px;
+          padding: 6px 10px; margin: 0 0 8px 0;
+          white-space: nowrap; overflow: hidden;
+        }
+        .label { overflow: hidden; text-overflow: ellipsis; flex: 1; }
+        .label em { font-style: normal; color: ${cssVar("--text-100")}; }
+        button {
+          font-family: inherit; font-size: 12px; cursor: pointer;
+          color: ${cssVar("--text-300")};
+          background: ${cssVar("--bg-000")};
+          border: 1px solid ${cssVar("--border-200")};
+          border-radius: 8px; padding: 3px 10px;
+        }
+        button:hover { color: ${cssVar("--text-100")}; background: ${cssVar("--bg-300")}; }
+      </style>
+      <div class="bar" role="status">
+        <span class="label">Branching from: <em></em></span>
+        <button type="button">Cancel</button>
+      </div>`;
+    shadow.querySelector("em")!.textContent = `“${label}”`;
+    shadow.querySelector("button")!.addEventListener("click", () => this.cancel());
+    dock.parentElement.insertBefore(host, dock);
+    this.headerHost = host;
+  }
+}

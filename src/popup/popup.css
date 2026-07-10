@@ -1,0 +1,49 @@
+/* popup.css — the popup cannot read claude.ai's live tokens, so it uses the
+   same warm neutral palette as the token fallbacks, with a dark variant. */
+:root {
+  color-scheme: light dark;
+  --bg: hsl(48 33% 97%);
+  --surface: hsl(0 0% 100%);
+  --text: hsl(60 3% 14%);
+  --muted: hsl(60 2% 45%);
+  --border: hsl(48 12% 88%);
+  --accent: hsl(15 56% 52%);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: hsl(60 2% 12%);
+    --surface: hsl(60 2% 16%);
+    --text: hsl(48 33% 94%);
+    --muted: hsl(48 8% 60%);
+    --border: hsl(60 2% 26%);
+  }
+}
+* { box-sizing: border-box; }
+body {
+  width: 300px;
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+header { padding: 14px 16px 8px; }
+h1 { margin: 0; font-size: 15px; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 11.5px; }
+main { padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; }
+label {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 8px; border-radius: 10px; cursor: pointer;
+}
+label:hover { background: var(--surface); }
+input[type="checkbox"] { accent-color: var(--accent); margin-top: 2px; }
+label span { display: flex; flex-direction: column; gap: 1px; }
+label small { color: var(--muted); }
+footer {
+  padding: 10px 16px 14px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+}
