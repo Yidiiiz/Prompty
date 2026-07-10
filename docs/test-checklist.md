@@ -42,19 +42,29 @@ touched plus "Cross-cutting".
 - ☐ Navigating to another conversation while active exits the mode cleanly.
 - ☐ Popup toggle off: buttons disappear, active mode cancels.
 
-## 2. Prompt Tree panel
+## 2. Prompt History panel
 
-- ☐ Panel appears over the left edge of the chat scroll area; it does not
-  cover the native sidebar, and sits flush when the sidebar is open; it does
-  not scroll with messages.
+- ☐ Panel appears over the left edge of the chat scroll area, spanning the
+  full viewport height below the site header (280px wide, titled
+  "Prompt History"); it does not cover the native sidebar, sits flush when
+  the sidebar is open, and does not scroll with messages.
+- ☐ Opening the site's **settings dialog / account menu covers the panel**
+  (and every other extension surface) — extension UI never sits on top of
+  site overlays.
 - ☐ One entry per message of the active path; user vs assistant dots visually
-  distinct; summaries are markdown-stripped first ~6 words, ellipsized.
+  distinct on the continuous rail; summaries are markdown-stripped first ~6
+  words, ellipsized.
 - ☐ Clicking an entry smooth-scrolls the message near the viewport top with a
-  brief highlight pulse.
-- ☐ The branched message shows a `k/n` badge; clicking expands stubs with the
-  other siblings' first ~4 words.
-- ☐ **Clicking a sibling stub jumps directly (1 → 3, not adjacent-only)**: the
-  page reloads onto that branch; the panel re-renders from the new path.
+  brief (~0.6s) highlight pulse **on the message text only** — not the empty
+  control space beneath it.
+- ☐ A branched message shows a passive `k/n` count chip AND an always-visible
+  numbered branch list beneath the entry: first two branches at reduced
+  opacity, current one full-opacity with an accent tick; `▸ N more` caret
+  reveals the rest, `▾ show less` collapses.
+- ☐ **Clicking a branch switches WITHOUT a page reload**: the chat re-renders
+  in place (native arrows are driven for you) and the panel follows.
+- ☐ **Direct jump 1 → 3** works (steps through 2 transiently); adjacent hops
+  work in both directions.
 - ☐ Panel updates live while an assistant reply streams (entry appears/summary
   fills in) without jank.
 - ☐ Chevron collapses to a thin edge tab; **state persists across reload**
@@ -62,7 +72,8 @@ touched plus "Cross-cutting".
 - ☐ **Compact mode**: narrow the window below ~1100px → dot strip with
   tooltips; same click behaviors. Also auto-compact on a chat with <4
   messages.
-- ☐ Note/comment side branches never appear as panel entries or badge counts.
+- ☐ Note/comment side branches never appear as panel entries, branch lists,
+  or counts.
 
 ## 3. Notes
 
@@ -70,8 +81,11 @@ touched plus "Cross-cutting".
   margin aligned with the selection's **first line**; it does not overlap the
   native selection popover (try selections near the right edge).
 - ☐ Selecting text in a **user** message shows nothing.
-- ☐ Composer opens in the margin at that position; typing happens there — the
-  main composer is untouched; Esc cancels; ⌘/Ctrl-Enter submits.
+- ☐ Clicking the ✎ button does **not** change the page's scroll position; the
+  composer opens at the selection's line.
+- ☐ Composer opens in the margin at that position; **every keystroke stays in
+  the note textarea — nothing appears in the main composer**; Esc cancels;
+  ⌘/Ctrl-Enter submits.
 - ☐ On submit the answer **streams into the note card**; the main chat shows
   no new messages; the note question/answer never appear in the chat.
 - ☐ **Context safety**: after a note, send a normal main-thread message and
@@ -101,6 +115,9 @@ touched plus "Cross-cutting".
 - ☐ Hovering an assistant reply with **no selection** shows the "+" button in
   the right margin, tracking the pointer vertically without jitter (rAF
   throttle).
+- ☐ **Moving the pointer straight from the text to the "+" button keeps it
+  visible and clickable** — it does not hide while crossing the gap between
+  the message and the margin.
 - ☐ With a selection active, the "+" does not appear (notes flow wins).
 - ☐ Clicking opens the composer at that height; submit streams into a card
   identical to a note card but labeled Comment (no quote).

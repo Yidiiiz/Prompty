@@ -23,6 +23,8 @@ export class CommentsFeature implements Feature {
   private enabled = false;
   private lastMouse: { x: number; y: number; target: Element } | null = null;
   private buttonShown = false;
+  /** Rect of the row the visible button belongs to (the "corridor" band). */
+  private shownRowRect: DOMRect | null = null;
 
   constructor(
     private ctx: Ctx,
@@ -60,17 +62,33 @@ export class CommentsFeature implements Feature {
       this.hide();
       return;
     }
-    const row = this.ctx.domMap.rowForElement(this.lastMouse.target);
+    const { x, y, target } = this.lastMouse;
+    // Pointer over our own gutter (shadow events retarget to the host):
+    // the user is traveling to / hovering the button — keep it.
+    if (this.buttonShown && target.closest("#pt-gutter-host")) return;
+    const row = this.ctx.domMap.rowForElement(target);
     if (!row || row.sender !== "assistant" || !row.uuid) {
+      // Corridor: between the message's right edge and the gutter, within the
+      // row's vertical band — the pointer is en route to the button; keep it.
+      const band = this.shownRowRect;
+      if (
+        this.buttonShown &&
+        band &&
+        y >= band.top - 8 &&
+        y <= band.bottom + 8 &&
+        x >= band.right - 4
+      ) {
+        return;
+      }
       this.hide();
       return;
     }
     const conversationUuid = this.ctx.getCurrentConversation();
     if (!conversationUuid) return;
-    const { x, y } = this.lastMouse;
     const anchorMessageUuid = row.uuid;
     const rowEl = row.el;
     this.buttonShown = true;
+    this.shownRowRect = rowEl.getBoundingClientRect();
     this.cards.showEntryButton("comment", y, null, () => {
       const anchor = this.buildAnchor(conversationUuid, anchorMessageUuid, rowEl, x, y);
       this.hide();
@@ -99,6 +117,7 @@ export class CommentsFeature implements Feature {
   private hide(): void {
     if (!this.buttonShown) return;
     this.buttonShown = false;
+    this.shownRowRect = null;
     this.cards.hideEntryButton("comment");
   }
 }

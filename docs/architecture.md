@@ -21,7 +21,8 @@ src/
 │  ├─ ctx.ts              typed event bus contract + Feature interface
 │  ├─ observer.ts         THE single rAF-batched MutationObserver
 │  ├─ dom-map.ts          DOM rows ⇄ active-path uuids (order/sender alignment)
-│  ├─ branch-switch.ts    BranchSwitchAdapter (leaf PUT + reload; replaceable)
+│  ├─ branch-switch.ts    BranchSwitchAdapter (native arrow stepping;
+│  │                      leaf PUT + reload fallback)
 │  ├─ composer.ts         composer read/write/dock/file-reattach helpers
 │  ├─ styles.ts           pt-* classes applied to native rows (ghost/hide/pulse)
 │  ├─ toast.ts            one-per-id degradation toasts (shadow DOM)
@@ -105,9 +106,12 @@ fetch.
 1. **MAIN-world content script instead of a `<script>`-tag injection** — the
    manifest's `world: "MAIN"` (Chrome 111+) achieves the same page-context
    patching at document_start with fewer moving parts and no CSP exposure.
-2. **Branch switching = leaf PUT + page reload**, isolated behind
-   `BranchSwitchAdapter`. The recon forbids arrow-click simulation; the SPA
-   exposes no external re-render hook, so the reload is the honest v1.
+2. **Branch switching = native arrow stepping (v0.2.0, user-directed), leaf
+   PUT + reload as fallback**, both isolated behind `BranchSwitchAdapter`.
+   Driving the app's own version arrows makes the app perform its PUT +
+   refetch (observed by the fetch patch), re-rendering in place with no
+   reload; the API path remains for when the arrows are unavailable, since
+   the SPA exposes no external re-render hook.
 3. **Note content is not duplicated locally** — cards render the question/reply
    from the note's own branch in the conversation tree (server-persistent,
    cross-device); storage holds anchors only. Live streams overlay until the

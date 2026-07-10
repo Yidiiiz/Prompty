@@ -7,9 +7,11 @@ power-user tools built on its real conversation structure:
   messages using the full main composer (attachments, long text, paste) instead
   of the small inline edit box. The target message ghosts, everything below it
   hides, and your next send becomes a sibling of it.
-- **Prompt Tree panel** — a collapsible overlay on the left edge of the chat
-  showing the active conversation path, with branch badges (`2/3`), expandable
-  sibling stubs, click-to-scroll, and direct jumps to any branch.
+- **Prompt History panel** — a collapsible, full-height overlay on the left
+  edge of the chat showing the active conversation path. Messages with
+  branches list them right beneath the entry (numbered, first two visible,
+  caret for the rest); click any branch to jump straight to it — no page
+  reload — or click an entry to scroll to that message.
 - **Notes** — highlight text in an assistant reply and ask a small margin
   question about it. The Q&A is sent as a *side branch* of the conversation
   tree, so it is **never part of the main thread's context**, yet it persists
@@ -56,10 +58,13 @@ extension card, then reload the claude.ai tab.
   in its toolbar. A header bar appears above the composer ("Branching from: …")
   with a Cancel button. Type and send normally; the send becomes a branch.
   Native `‹ 2/3 ›` arrows and the panel now show the siblings.
-- **Panel**: chevron collapses it to an edge tab (state persists). It auto-
-  compacts to a dot strip on narrow windows (<1100px) or short chats
-  (<4 messages). Click a `k/n` badge to expand sibling stubs; click a stub to
-  jump to that branch (the page reloads onto it — see limitations).
+- **Prompt History panel**: spans the page height beside the chat; the chevron
+  collapses it to an edge tab (state persists). It auto-compacts to a dot
+  strip on narrow windows (<1100px) or short chats (<4 messages). Messages
+  with branches show a numbered branch list underneath — the first two plus a
+  `▸ N more` caret; click a branch to switch to it in place (the extension
+  drives the native `‹ ›` version arrows for you, stepping directly from any
+  branch to any other).
 - **Notes**: select text in an assistant reply → click the ✎ button in the
   right margin (next to, never over, the native selection popover) → type the
   question in the margin composer (⌘/Ctrl-Enter sends). The answer streams into
@@ -98,9 +103,11 @@ something disappears or misbehaves:
 4. **Notes stopped answering** — check the Network tab for the extension's own
    `completion` POST. A 4xx usually means the payload template drifted; compare
    with a native send and adjust `buildSideBranchPayload` in `src/page/api.ts`.
-5. **Branch switch does nothing** — confirm the `current_leaf_message_uuid` PUT
-   still returns 200 (recon report §5). The whole mechanism is isolated in
-   `src/content/branch-switch.ts`.
+5. **Branch switch does nothing** — check that the native version arrows still
+   carry `aria-label="Previous version"` / `"Next version"` (the primary
+   mechanism drives them), and that the `current_leaf_message_uuid` PUT still
+   returns 200 (the fallback; recon report §5). The whole mechanism is
+   isolated in `src/content/branch-switch.ts`.
 6. **Nothing works at all** — claude.ai may have moved off `window.fetch`
    (e.g. XHR or a worker). Confirm in the Network tab; interception lives in
    `src/page/fetch-patch.ts`.
@@ -110,10 +117,11 @@ so the next breakage is diagnosable.
 
 ## Known limitations (deliberate, documented honesty)
 
-- **Branch jumps reload the page.** The confirmed API path (leaf PUT) updates
-  the server, but the SPA offers no supported way to re-render from outside;
-  the reload is isolated in `BranchSwitchAdapter` for future replacement.
-  Native arrows still work for adjacent hops, of course.
+- **Branch jumps step through intermediate branches.** Switching drives the
+  app's own version arrows, so jumping 1 → 3 briefly renders branch 2 on the
+  way. If the arrows can't be found (site update, message unmounted), the
+  extension falls back to the API path (leaf PUT) plus a one-time page reload
+  — both mechanisms are isolated in `BranchSwitchAdapter`.
 - **Native branch counters include note branches.** A message with one note
   shows `‹ 1/2 ›` in claude.ai's own UI; the extension can't hide native
   counters. The Prompt Tree panel excludes note branches from its own badges.

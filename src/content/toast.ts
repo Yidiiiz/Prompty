@@ -10,7 +10,7 @@
  * Failure behavior: none meaningful — if the toast cannot render, the notice
  * also goes to the console.
  */
-import { cssVar, FONT_SANS } from "../shared/tokens";
+import { cssVar, FONT_SANS, UI, Z_EXTENSION_OVERLAY } from "../shared/tokens";
 
 const shownIds = new Set<string>();
 let host: HTMLElement | null = null;
@@ -30,7 +30,7 @@ function ensureHost(): ShadowRoot | null {
       bottom: 96px;
       left: 50%;
       transform: translateX(-50%);
-      z-index: 2147483000;
+      z-index: ${Z_EXTENSION_OVERLAY};
       display: flex;
       flex-direction: column;
       gap: 8px;
@@ -40,12 +40,14 @@ function ensureHost(): ShadowRoot | null {
     .toast {
       pointer-events: auto;
       font-family: ${FONT_SANS};
-      font-size: 13px;
+      font-size: 12.5px;
+      line-height: 1.45;
       color: ${cssVar("--text-100")};
-      background: ${cssVar("--bg-000")};
+      background: ${cssVar("--bg-000", 0.96)};
+      backdrop-filter: blur(8px);
       border: 1px solid ${cssVar("--border-300")};
-      border-radius: 10px;
-      box-shadow: 0 4px 16px hsl(0 0% 0% / 0.12);
+      border-radius: ${UI.radiusMd};
+      box-shadow: ${UI.shadowMd};
       padding: 10px 14px;
       max-width: 440px;
       display: flex;
@@ -53,16 +55,26 @@ function ensureHost(): ShadowRoot | null {
       align-items: baseline;
       animation: life 7s linear forwards;
     }
+    .toast::before {
+      content: "";
+      flex: none;
+      align-self: center;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: ${cssVar("--accent-main-100")};
+    }
     .toast .close {
       cursor: pointer;
       color: ${cssVar("--text-400")};
-      font-size: 14px;
+      font-size: 13px;
       line-height: 1;
       background: none;
       border: none;
-      padding: 0;
+      padding: 2px 3px;
+      border-radius: 6px;
       font-family: inherit;
+      transition: color ${UI.transition}, background ${UI.transition};
     }
+    .toast .close:hover { color: ${cssVar("--text-100")}; background: ${cssVar("--bg-300")}; }
     @keyframes life {
       0% { opacity: 0; transform: translateY(6px); }
       4% { opacity: 1; transform: translateY(0); }

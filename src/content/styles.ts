@@ -11,7 +11,7 @@
  * re-install it on the next observer tick (installPageStyles is idempotent
  * and cheap).
  */
-import { cssVar, FONT_SANS } from "../shared/tokens";
+import { cssVar, FONT_SANS, UI } from "../shared/tokens";
 
 const STYLE_ID = "pt-page-styles";
 
@@ -27,11 +27,11 @@ const CSS = `
 }
 
 .pt-highlight-pulse {
-  animation: pt-pulse 1.4s ease-out 1;
+  animation: pt-pulse 0.6s ease-out 1;
   border-radius: 8px;
 }
 @keyframes pt-pulse {
-  0% { background-color: ${cssVar("--accent-main-100", 0.16)}; }
+  0% { background-color: ${cssVar("--accent-main-100", 0.12)}; }
   100% { background-color: transparent; }
 }
 
@@ -48,12 +48,17 @@ const CSS = `
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   white-space: nowrap;
+  transition: background ${UI.transition}, color ${UI.transition};
 }
 .pt-branch-btn:hover {
   background: ${cssVar("--bg-300", 0.8)};
   color: ${cssVar("--text-100")};
+}
+.pt-branch-btn:focus-visible {
+  outline: 2px solid ${cssVar("--accent-main-100", 0.6)};
+  outline-offset: 1px;
 }
 .pt-branch-btn svg { display: block; }
 `;

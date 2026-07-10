@@ -86,15 +86,20 @@ returns 200 echoing the body. **One request jumps to any leaf** (sibling 1 → 3
 directly); the app then refetches the tree to re-render. The recon directive is
 explicit: do **not** simulate arrow clicks.
 
-**Flagged gap → documented deviation:** the captures confirm the PUT + refetch
-sequence, but the SPA offers no external hook to make its own React state
-re-render from a fetch it did not initiate. The extension mirrors the confirmed
-sequence (PUT, model refetch) and then reloads the page to render the switched
-branch. This is isolated in the `BranchSwitchAdapter`
-(`src/content/branch-switch.ts`) so a soft re-render can replace it if one is
-found. A capture of any app-internal event/cache invalidation triggered by the
-native arrows (React Query cache key, custom event) would enable removing the
-reload — see §8.
+**Flagged gap → documented deviation (revised in v0.2.0, user-directed):** the
+captures confirm the PUT + refetch sequence, but the SPA offers no external
+hook to make its own React state re-render from a fetch it did not initiate —
+a PUT issued by the extension updates the server without updating the screen.
+Field testing showed a page reload after the PUT is too disruptive, so as of
+v0.2.0 the primary mechanism (`NativeArrowsAdapter` in
+`src/content/branch-switch.ts`) drives the app's own version-arrow buttons the
+required number of steps: each click makes the app itself PUT the leaf and
+refetch the tree (both observed by the fetch patch), giving an in-place
+re-render with no reload. Step positions are computed in native sibling order
+(note branches included, matching the `N / M` counter). The PUT + reload path
+remains as the fallback when arrows are missing or a step times out. A capture
+of any app-internal cache-invalidation event triggered by the arrows would
+still enable a click-free implementation — see §8.
 
 ## 6. Streaming (SSE) format
 

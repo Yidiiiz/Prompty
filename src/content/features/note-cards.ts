@@ -25,7 +25,7 @@
  * panel's unanchored drawer; a failed send renders a failed card that can be
  * retried only by re-asking (the draft text is preserved by autosave).
  */
-import { cssVar, FONT_SANS, FONT_MONO } from "../../shared/tokens";
+import { cssVar, FONT_SANS, FONT_MONO, UI, Z_CONTENT, Z_EXTENSION_OVERLAY } from "../../shared/tokens";
 import { renderMarkdown } from "../../shared/markdown";
 import { buildNotePrompt, parseNotePrompt, type NoteMeta } from "../../shared/note-protocol";
 import { summarizer } from "../../shared/summary";
@@ -46,6 +46,18 @@ import { findAnchorText, findQuote, firstLineRect, indexText, type TextIndex } f
 const GUTTER_WIDTH = 300;
 const GUTTER_MIN_WIDTH = 200;
 const CARD_GAP = 8;
+
+/**
+ * claude.ai routes stray keystrokes to the main composer via document-level
+ * handlers. Events inside our shadow roots retarget to the light-DOM host and
+ * bubble on — stopping them here keeps typing inside note/comment textareas
+ * without ever calling preventDefault (the inputs behave natively).
+ */
+function isolateInputEvents(host: HTMLElement): void {
+  for (const type of ["keydown", "keypress", "keyup", "beforeinput", "input", "paste"]) {
+    host.addEventListener(type, (ev) => ev.stopPropagation());
+  }
+}
 
 export type GutterAnchor = Omit<NoteRecord, "noteId" | "noteBranchRootUuid" | "createdAt">;
 
@@ -187,7 +199,8 @@ export class NoteCardManager {
     this.host = document.createElement("div");
     this.host.id = "pt-gutter-host";
     this.host.style.cssText =
-      "position:absolute;top:0;bottom:0;left:100%;width:0;pointer-events:none;z-index:20;";
+      `position:absolute;top:0;bottom:0;left:100%;width:0;pointer-events:none;z-index:${Z_CONTENT};`;
+    isolateInputEvents(this.host);
     const shadow = this.host.attachShadow({ mode: "open" });
     const style = document.createElement("style");
     style.textContent = GUTTER_CSS;
@@ -309,9 +322,13 @@ export class NoteCardManager {
     };
     el.querySelector<HTMLButtonElement>("button.primary")!.addEventListener("click", submit);
     el.querySelector<HTMLButtonElement>("button.ghost")!.addEventListener("click", () => this.closeComposer());
-    layer.appendChild(el);
+    // Position at the anchor BEFORE inserting and focus without scrolling —
+    // focusing an unpositioned (top: 0) element would yank the page to the top.
     this.composer = { kind, anchor, quoteDisplay, el };
-    textarea.focus();
+    const y = this.resolveComposerY();
+    if (y !== null) el.style.top = `${Math.max(0, Math.round(y))}px`;
+    layer.appendChild(el);
+    textarea.focus({ preventScroll: true });
   }
 
   closeComposer(): void {
@@ -408,6 +425,7 @@ export class NoteCardManager {
     this.modalHost?.remove();
     const host = document.createElement("div");
     host.id = "pt-note-modal";
+    isolateInputEvents(host);
     const shadow = host.attachShadow({ mode: "open" });
     const style = document.createElement("style");
     style.textContent = MODAL_CSS;
@@ -668,17 +686,19 @@ export class NoteCardManager {
   private renderReply(el: HTMLElement, reply: string, status: ResolvedCard["status"]): void {
     const aEl = el.querySelector<HTMLElement>(".a")!;
     const statusEl = el.querySelector<HTMLElement>(".status")!;
+    const busy = status === "sending" || status === "streaming";
     const statusText =
       status === "sending"
-        ? "sending…"
+        ? "sending"
         : status === "streaming"
-          ? "thinking…"
+          ? "thinking"
           : status === "failed"
             ? "failed"
             : status === "missing"
               ? "content unavailable"
               : "";
     if (statusEl.textContent !== statusText) statusEl.textContent = statusText;
+    if (statusEl.classList.contains("busy") !== busy) statusEl.classList.toggle("busy", busy);
     const mode = status === "streaming" || status === "sending" ? "text" : "md";
     if (el.getAttribute("data-mode") !== mode || el.getAttribute("data-len") !== String(reply.length)) {
       el.setAttribute("data-mode", mode);
@@ -714,65 +734,94 @@ const CARD_BASE_CSS = `
     pointer-events: auto;
     font-family: ${FONT_SANS};
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 1.5;
     color: ${cssVar("--text-200")};
     background: ${cssVar("--bg-000")};
     border: 1px solid ${cssVar("--border-300")};
-    border-radius: 10px;
-    box-shadow: 0 1px 6px hsl(0 0% 0% / 0.07);
-    padding: 8px 10px;
-    transition: top 160ms ease;
+    border-radius: ${UI.radiusMd};
+    box-shadow: ${UI.shadowSm};
+    padding: 10px 12px;
+    transition: top 160ms ease, box-shadow ${UI.transition}, border-color ${UI.transition};
+    animation: pt-card-in 180ms ease-out;
   }
+  @keyframes pt-card-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .card:hover { box-shadow: ${UI.shadowMd}; }
+  .card:focus-within { border-color: ${cssVar("--accent-main-100", 0.55)}; }
   .card .quote {
     font-size: 11px;
     color: ${cssVar("--text-400")};
-    border-left: 2px solid ${cssVar("--accent-main-100", 0.5)};
-    padding-left: 6px;
-    margin-bottom: 5px;
+    background: ${cssVar("--bg-100")};
+    border-left: 2px solid ${cssVar("--accent-main-100", 0.55)};
+    border-radius: 0 6px 6px 0;
+    padding: 3px 8px 3px 8px;
+    margin-bottom: 7px;
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
   }
-  .card .quote.plain { border-left-color: ${cssVar("--accent-secondary-100", 0.5)}; }
+  .card .quote.plain { border-left-color: ${cssVar("--accent-secondary-100", 0.55)}; }
   .card .moved {
     display: none;
     font-size: 10px;
     color: ${cssVar("--danger-100")};
-    margin-bottom: 4px;
+    margin-bottom: 5px;
   }
-  .card .q { font-weight: 600; color: ${cssVar("--text-100")}; margin-bottom: 4px; white-space: pre-wrap; }
-  .card .a { white-space: normal; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; }
+  .card .q { font-weight: 600; color: ${cssVar("--text-100")}; margin-bottom: 5px; white-space: pre-wrap; }
+  .card .a { white-space: normal; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; scrollbar-width: thin; }
   .card .a p { margin: 0 0 6px 0; }
   .card .a p:last-child { margin-bottom: 0; }
-  .card .a pre { background: ${cssVar("--bg-200")}; border-radius: 6px; padding: 6px; overflow-x: auto; }
+  .card .a pre { background: ${cssVar("--bg-200")}; border-radius: ${UI.radiusSm}; padding: 7px 8px; overflow-x: auto; }
   .card .a code { font-family: ${FONT_MONO}; font-size: 11px; }
-  .card .foot { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+  .card .a a { color: ${cssVar("--accent-secondary-100")}; }
+  .card .foot { display: flex; align-items: center; gap: 4px; margin-top: 7px; }
   .card .status { flex: 1; font-size: 10.5px; color: ${cssVar("--text-400")}; font-style: italic; }
+  .card .status.busy::after {
+    content: "…";
+    display: inline-block; width: 1em; text-align: left;
+    animation: pt-dots 1.2s steps(4, end) infinite;
+  }
+  @keyframes pt-dots {
+    0% { clip-path: inset(0 100% 0 0); }
+    100% { clip-path: inset(0 -0.2em 0 0); }
+  }
   .card .icon {
-    border: none; background: none; cursor: pointer; padding: 2px 4px;
-    color: ${cssVar("--text-400")}; font-size: 12px; border-radius: 6px; font-family: inherit;
+    border: none; background: none; cursor: pointer; padding: 3px 5px;
+    color: ${cssVar("--text-400")}; font-size: 12px; line-height: 1;
+    border-radius: ${UI.radiusSm}; font-family: inherit;
+    transition: background ${UI.transition}, color ${UI.transition};
   }
   .card .icon:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
+  .card .icon:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
   .card textarea {
-    width: 100%; box-sizing: border-box; resize: vertical;
-    font-family: ${FONT_SANS}; font-size: 12px; color: ${cssVar("--text-100")};
+    width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px;
+    font-family: ${FONT_SANS}; font-size: 12px; line-height: 1.5;
+    color: ${cssVar("--text-100")};
     background: ${cssVar("--bg-100")};
     border: 1px solid ${cssVar("--border-200")};
-    border-radius: 8px; padding: 6px 8px; outline: none;
+    border-radius: ${UI.radiusSm}; padding: 7px 9px; outline: none;
+    transition: border-color ${UI.transition};
   }
+  .card textarea::placeholder { color: ${cssVar("--text-500")}; }
   .card textarea:focus { border-color: ${cssVar("--accent-main-100")}; }
   .card .foot .primary {
-    border: none; cursor: pointer; border-radius: 8px; padding: 4px 12px;
+    border: none; cursor: pointer; border-radius: ${UI.radiusSm}; padding: 5px 14px;
     background: ${cssVar("--accent-main-100")}; color: ${cssVar("--oncolor-100")};
-    font-family: inherit; font-size: 12px;
+    font-family: inherit; font-size: 12px; font-weight: 500;
+    transition: background ${UI.transition}, transform ${UI.transition};
   }
   .card .foot .primary:hover { background: ${cssVar("--accent-main-200")}; }
+  .card .foot .primary:active { transform: scale(0.98); }
   .card .foot .ghost {
     border: 1px solid ${cssVar("--border-200")}; background: none; cursor: pointer;
-    border-radius: 8px; padding: 3px 10px; color: ${cssVar("--text-300")};
+    border-radius: ${UI.radiusSm}; padding: 4px 12px; color: ${cssVar("--text-300")};
     font-family: inherit; font-size: 12px;
+    transition: background ${UI.transition}, color ${UI.transition};
   }
+  .card .foot .ghost:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
 `;
 
 const GUTTER_CSS = `
@@ -784,20 +833,29 @@ const GUTTER_CSS = `
   .entry {
     position: absolute; left: -2px;
     pointer-events: auto; cursor: pointer;
-    width: 24px; height: 24px; border-radius: 50%;
+    width: 26px; height: 26px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-family: ${FONT_SANS}; font-size: 13px; line-height: 1;
     color: ${cssVar("--accent-main-200")};
     background: ${cssVar("--bg-000")};
     border: 1px solid ${cssVar("--border-200")};
-    box-shadow: 0 1px 4px hsl(0 0% 0% / 0.10);
+    box-shadow: ${UI.shadowSm};
     z-index: 5;
+    transition: background ${UI.transition}, transform ${UI.transition}, box-shadow ${UI.transition};
   }
-  .entry:hover { background: ${cssVar("--accent-main-100", 0.1)}; }
+  /* generous invisible hit area — the pointer travels from the text */
+  .entry::after { content: ""; position: absolute; inset: -10px; border-radius: 50%; }
+  .entry:hover {
+    background: ${cssVar("--accent-main-100", 0.1)};
+    transform: translateY(-1px);
+    box-shadow: ${UI.shadowMd};
+  }
+  .entry:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
   .conn {
     position: absolute; left: -10px; width: 9px;
     border-left: 1px solid ${cssVar("--accent-main-100", 0.45)};
     border-top: 1px solid ${cssVar("--accent-main-100", 0.45)};
+    border-top-left-radius: 4px;
     pointer-events: none;
   }
 `;
@@ -806,35 +864,53 @@ const MODAL_CSS = `
   :host { all: initial; }
   * { box-sizing: border-box; }
   .overlay {
-    position: fixed; inset: 0; z-index: 2147483100;
+    position: fixed; inset: 0; z-index: ${Z_EXTENSION_OVERLAY};
     background: hsl(0 0% 0% / 0.4);
+    backdrop-filter: blur(4px);
     display: flex; align-items: center; justify-content: center;
+    animation: pt-fade-in 140ms ease-out;
   }
+  @keyframes pt-fade-in { from { opacity: 0; } to { opacity: 1; } }
   .modal {
     font-family: ${FONT_SANS}; font-size: 14px; line-height: 1.55;
     color: ${cssVar("--text-100")};
     background: ${cssVar("--bg-000")};
     border: 1px solid ${cssVar("--border-300")};
-    border-radius: 14px;
-    box-shadow: 0 12px 40px hsl(0 0% 0% / 0.25);
+    border-radius: ${UI.radiusLg};
+    box-shadow: ${UI.shadowLg};
     width: min(640px, calc(100vw - 48px));
     max-height: calc(100vh - 96px);
-    overflow-y: auto;
-    padding: 18px 22px;
+    overflow-y: auto; scrollbar-width: thin;
+    padding: 20px 24px;
+    animation: pt-modal-in 160ms cubic-bezier(0.2, 0, 0.2, 1);
   }
-  .head { display: flex; align-items: center; margin-bottom: 10px; }
-  .kind { flex: 1; font-size: 12px; font-weight: 600; color: ${cssVar("--text-400")}; text-transform: uppercase; letter-spacing: .05em; }
-  .close { border: none; background: none; cursor: pointer; font-size: 14px; color: ${cssVar("--text-400")}; border-radius: 6px; padding: 4px 6px; font-family: inherit; }
+  @keyframes pt-modal-in {
+    from { opacity: 0; transform: scale(0.97) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .head { display: flex; align-items: center; margin-bottom: 12px; }
+  .kind {
+    flex: 1; font-size: 11px; font-weight: 600;
+    color: ${cssVar("--text-400")};
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .close {
+    border: none; background: none; cursor: pointer; font-size: 14px;
+    color: ${cssVar("--text-400")}; border-radius: ${UI.radiusSm};
+    padding: 5px 7px; font-family: inherit; line-height: 1;
+    transition: background ${UI.transition}, color ${UI.transition};
+  }
   .close:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
   .quote {
-    margin: 0 0 10px 0; padding: 6px 10px;
+    margin: 0 0 12px 0; padding: 8px 12px;
     border-left: 3px solid ${cssVar("--accent-main-100", 0.6)};
     background: ${cssVar("--bg-100")};
-    color: ${cssVar("--text-300")}; font-size: 13px; border-radius: 0 8px 8px 0;
+    color: ${cssVar("--text-300")}; font-size: 13px;
+    border-radius: 0 ${UI.radiusSm} ${UI.radiusSm} 0;
   }
-  .question { font-weight: 600; margin-bottom: 10px; white-space: pre-wrap; }
+  .question { font-weight: 600; margin-bottom: 12px; white-space: pre-wrap; }
   .answer p { margin: 0 0 10px 0; }
-  .answer pre { background: ${cssVar("--bg-200")}; border-radius: 8px; padding: 10px; overflow-x: auto; }
+  .answer pre { background: ${cssVar("--bg-200")}; border-radius: ${UI.radiusSm}; padding: 10px 12px; overflow-x: auto; }
   .answer code { font-family: ${FONT_MONO}; font-size: 13px; }
   .answer a { color: ${cssVar("--accent-secondary-100")}; }
 `;

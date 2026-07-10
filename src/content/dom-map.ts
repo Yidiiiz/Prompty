@@ -49,6 +49,31 @@ export class DomMap {
     return null;
   }
 
+  /**
+   * The message TEXT element of a row — for highlight effects that must not
+   * cover the hover-toolbar space under the text. Human rows have the
+   * user-message hook; assistant rows use the direct child holding the most
+   * text that doesn't contain the action bar. Falls back to the row itself.
+   */
+  contentElOf(row: DomRow): HTMLElement {
+    if (row.sender === "human") {
+      const el = row.el.querySelector<HTMLElement>(sel("userMessage"));
+      if (el) return el;
+    }
+    let best: HTMLElement | null = null;
+    let bestLen = 0;
+    for (const child of row.el.children) {
+      if (!(child instanceof HTMLElement)) continue;
+      if (child.querySelector(sel("actionBarCopy")) || child.querySelector(sel("actionBarRetry"))) continue;
+      const len = (child.textContent ?? "").length;
+      if (len > bestLen) {
+        bestLen = len;
+        best = child;
+      }
+    }
+    return best ?? row.el;
+  }
+
   rebuild(tree: ConversationTree | null): void {
     this.rows = [];
     this.byUuid.clear();

@@ -19,7 +19,7 @@
  * the mode reactivates (override re-armed) and the native error stays
  * visible; the draft is never touched.
  */
-import { cssVar, FONT_SANS } from "../../shared/tokens";
+import { cssVar, FONT_SANS, UI } from "../../shared/tokens";
 import { summarizer } from "../../shared/summary";
 import { q } from "../../shared/selectors";
 import { toastOnce } from "../toast";
@@ -209,28 +209,37 @@ export class BranchComposeFeature implements Feature {
       <style>
         :host { all: initial; display: block; }
         .bar {
-          display: flex; align-items: center; gap: 8px;
-          font-family: ${FONT_SANS}; font-size: 12.5px;
+          display: flex; align-items: center; gap: 10px;
+          font-family: ${FONT_SANS}; font-size: 12.5px; line-height: 1.4;
           color: ${cssVar("--text-200")};
-          background: ${cssVar("--bg-200")};
+          background: ${cssVar("--bg-200", 0.95)};
           border: 1px solid ${cssVar("--border-300")};
-          border-left: 3px solid ${cssVar("--accent-main-100")};
-          border-radius: 10px;
-          padding: 6px 10px; margin: 0 0 8px 0;
+          box-shadow: inset 3px 0 0 0 ${cssVar("--accent-main-100")}, ${UI.shadowSm};
+          border-radius: ${UI.radiusMd};
+          padding: 7px 8px 7px 14px; margin: 0 0 8px 0;
           white-space: nowrap; overflow: hidden;
+          animation: pt-bar-in 160ms ease-out;
         }
+        @keyframes pt-bar-in {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .glyph { flex: none; color: ${cssVar("--accent-main-200")}; display: flex; }
         .label { overflow: hidden; text-overflow: ellipsis; flex: 1; }
-        .label em { font-style: normal; color: ${cssVar("--text-100")}; }
+        .label em { font-style: normal; font-weight: 500; color: ${cssVar("--text-100")}; }
         button {
           font-family: inherit; font-size: 12px; cursor: pointer;
           color: ${cssVar("--text-300")};
           background: ${cssVar("--bg-000")};
           border: 1px solid ${cssVar("--border-200")};
-          border-radius: 8px; padding: 3px 10px;
+          border-radius: ${UI.radiusSm}; padding: 4px 12px;
+          transition: background ${UI.transition}, color ${UI.transition};
         }
         button:hover { color: ${cssVar("--text-100")}; background: ${cssVar("--bg-300")}; }
+        button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
       </style>
       <div class="bar" role="status">
+        <span class="glyph"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 13V6"/><circle cx="4" cy="14" r="1.6"/><circle cx="4" cy="4" r="1.6"/><circle cx="12" cy="6" r="1.6"/><path d="M4 11c0-3 8-2 8-4"/></svg></span>
         <span class="label">Branching from: <em></em></span>
         <button type="button">Cancel</button>
       </div>`;

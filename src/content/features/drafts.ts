@@ -28,7 +28,7 @@
  * degrades to a notice when the app ignores it.
  */
 import { debounce } from "../../shared/util";
-import { cssVar, FONT_SANS } from "../../shared/tokens";
+import { cssVar, FONT_SANS, UI } from "../../shared/tokens";
 import { sel } from "../../shared/selectors";
 import {
   clearDraft,
@@ -285,25 +285,33 @@ export class DraftsFeature implements Feature {
         :host { all: initial; display: block; }
         .banner {
           display: flex; align-items: center; gap: 10px;
-          font-family: ${FONT_SANS}; font-size: 12px;
+          font-family: ${FONT_SANS}; font-size: 12px; line-height: 1.4;
           color: ${cssVar("--text-300")};
-          background: ${cssVar("--bg-200")};
+          background: ${cssVar("--bg-200", 0.95)};
           border: 1px solid ${cssVar("--border-300")};
-          border-radius: 10px;
-          padding: 5px 10px; margin: 0 0 8px 0;
+          border-radius: ${UI.radiusMd};
+          box-shadow: ${UI.shadowSm};
+          padding: 6px 8px 6px 12px; margin: 0 0 8px 0;
           overflow: hidden; white-space: nowrap;
+          animation: pt-banner-in 160ms ease-out;
+        }
+        @keyframes pt-banner-in {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
         }
         .head { font-style: italic; color: ${cssVar("--text-400")}; flex: none; }
         .line { flex: 1; overflow: hidden; text-overflow: ellipsis; color: ${cssVar("--text-200")}; }
         .extras { flex: none; color: ${cssVar("--text-500")}; font-size: 11px; }
         button {
           flex: none; font-family: inherit; font-size: 12px; cursor: pointer;
-          border-radius: 8px; padding: 3px 10px;
+          border-radius: ${UI.radiusSm}; padding: 4px 12px;
+          transition: background ${UI.transition}, color ${UI.transition};
         }
-        .restore { border: none; background: ${cssVar("--accent-main-100")}; color: ${cssVar("--oncolor-100")}; }
+        button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
+        .restore { border: none; background: ${cssVar("--accent-main-100")}; color: ${cssVar("--oncolor-100")}; font-weight: 500; }
         .restore:hover { background: ${cssVar("--accent-main-200")}; }
         .clear { border: 1px solid ${cssVar("--border-200")}; background: none; color: ${cssVar("--text-300")}; }
-        .clear:hover { background: ${cssVar("--bg-300")}; }
+        .clear:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
       </style>
       <div class="banner" role="status">
         <span class="head">autosaved message</span>

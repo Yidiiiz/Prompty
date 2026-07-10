@@ -34,6 +34,30 @@ export function rafThrottle(fn: () => void): () => void {
   };
 }
 
+/**
+ * Waits (frame by frame, bounded) until `predicate` returns true. Resolves
+ * false on timeout. This is a condition wait for DOM settling after an
+ * observed network event — not a polling timer: it runs only while awaited,
+ * only on animation frames, and always terminates.
+ */
+export function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const deadline = performance.now() + timeoutMs;
+    const check = () => {
+      let pass = false;
+      try {
+        pass = predicate();
+      } catch {
+        pass = false;
+      }
+      if (pass) return resolve(true);
+      if (performance.now() > deadline) return resolve(false);
+      requestAnimationFrame(check);
+    };
+    check();
+  });
+}
+
 /** Minimal typed event bus for intra-content-script communication. */
 export class EventBus<Events> {
   private listeners = new Map<keyof Events, Set<(payload: never) => void>>();

@@ -45,6 +45,40 @@ export const FONT_SANS =
 export const FONT_MONO =
   'var(--font-anthropic-mono, ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace)';
 
+/* ------------------------------------------------------- design language */
+/**
+ * One shared design language for every extension surface, so panel, cards,
+ * modal, toast, banner, and header read as a single product.
+ */
+export const UI = {
+  /** Radii: sm = chips/buttons, md = cards/bars, lg = panel/modal. */
+  radiusSm: "8px",
+  radiusMd: "12px",
+  radiusLg: "16px",
+  /** Layered, soft shadows (small = resting card, large = overlay). */
+  shadowSm: "0 1px 2px hsl(0 0% 0% / 0.05), 0 2px 8px hsl(0 0% 0% / 0.06)",
+  shadowMd: "0 2px 4px hsl(0 0% 0% / 0.06), 0 8px 24px hsl(0 0% 0% / 0.10)",
+  shadowLg: "0 8px 16px hsl(0 0% 0% / 0.12), 0 24px 64px hsl(0 0% 0% / 0.22)",
+  /** Single motion voice. */
+  transition: "150ms cubic-bezier(0.2, 0, 0.2, 1)",
+} as const;
+
+/** Focus ring applied to interactive extension controls. */
+export function focusRing(): string {
+  return `outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px;`;
+}
+
+/* --------------------------------------------------------- layering policy */
+/**
+ * claude.ai's overlay layer starts at z-index 50 (Tailwind scale; the
+ * captured selection tooltip is z-50 and dialogs/menus render at ≥ 50).
+ * ALL extension UI must sit above the chat content but BELOW 50, so the
+ * site's settings dialog, account menu, and other overlays always cover it.
+ */
+export const Z_CONTENT = 20; // in-scroll-container surfaces (gutter cards)
+export const Z_PANEL = 30; // panel, branch header bar, draft banner
+export const Z_EXTENSION_OVERLAY = 40; // toast stack, note fullscreen modal
+
 /** `cssVar("--bg-100")` -> `hsl(var(--bg-100, 48 33% 97%))` */
 export function cssVar(token: string, alpha?: number): string {
   const fallback = TOKEN_FALLBACKS[token] ?? "0 0% 50%";
