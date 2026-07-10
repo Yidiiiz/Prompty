@@ -295,36 +295,33 @@ export class DraftsFeature implements Feature {
     shadow.innerHTML = `
       <style>
         :host { all: initial; }
+        /* styled like the site's own inline notices (usage limits) that sit
+           attached to the top of the prompt box: flush, tinted, link actions */
         .banner {
           pointer-events: auto;
           display: flex; align-items: center; gap: 10px;
           font-family: ${FONT_SANS}; font-size: 12px; line-height: 1.4;
-          color: ${cssVar("--text-200")};
+          color: ${cssVar("--text-300")};
           background: ${cssVar("--bg-200", 0.97)};
           backdrop-filter: blur(8px);
-          box-shadow: inset 3px 0 0 0 ${cssVar("--accent-secondary-100", 0.7)}, ${UI.shadowMd};
-          border-radius: 0 ${UI.radiusMd} ${UI.radiusMd} 0;
-          padding: 6px 8px 6px 12px;
+          border-radius: ${UI.radiusMd} ${UI.radiusMd} 0 0;
+          box-shadow: 0 -4px 16px hsl(0 0% 0% / 0.06);
+          padding: 7px 16px;
           overflow: hidden; white-space: nowrap;
-          animation: pt-banner-in 160ms ease-out;
-        }
-        @keyframes pt-banner-in {
-          from { opacity: 0; transform: translateY(4px); }
-          to { opacity: 1; transform: translateY(0); }
         }
         .head { font-style: italic; color: ${cssVar("--text-400")}; flex: none; }
         .line { flex: 1; overflow: hidden; text-overflow: ellipsis; color: ${cssVar("--text-200")}; }
         .extras { flex: none; color: ${cssVar("--text-500")}; font-size: 11px; }
         button {
           flex: none; font-family: inherit; font-size: 12px; cursor: pointer;
-          border-radius: ${UI.radiusSm}; padding: 4px 12px;
-          transition: background ${UI.transition}, color ${UI.transition};
+          border: none; background: none; padding: 2px 4px; border-radius: 6px;
+          transition: color ${UI.transition};
         }
         button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
-        .restore { border: none; background: ${cssVar("--accent-main-100")}; color: ${cssVar("--oncolor-100")}; font-weight: 500; }
-        .restore:hover { background: ${cssVar("--accent-main-200")}; }
-        .clear { border: 1px solid ${cssVar("--border-200")}; background: none; color: ${cssVar("--text-300")}; }
-        .clear:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
+        .restore { color: ${cssVar("--accent-main-200")}; font-weight: 500; }
+        .restore:hover { color: ${cssVar("--accent-main-100")}; text-decoration: underline; }
+        .clear { color: ${cssVar("--text-400")}; }
+        .clear:hover { color: ${cssVar("--text-100")}; text-decoration: underline; }
       </style>
       <div class="banner" role="status">
         <span class="head">autosaved message</span>
@@ -346,15 +343,14 @@ export class DraftsFeature implements Feature {
     this.positionBanner();
   }
 
-  /** Keeps the floating banner aligned just above the prompt box. */
+  /** Keeps the banner attached flush to the top of the prompt box. */
   private positionBanner(): void {
     if (!this.bannerHost) return;
     const dockRect = getComposerDockRect();
     if (!dockRect) return;
-    const width = Math.min(dockRect.width, 720);
-    const left = `${Math.round(dockRect.left + (dockRect.width - width) / 2)}px`;
-    const bottom = `${Math.round(window.innerHeight - dockRect.top + 8)}px`;
-    const widthPx = `${Math.round(width)}px`;
+    const left = `${Math.round(dockRect.left)}px`;
+    const bottom = `${Math.round(window.innerHeight - dockRect.top)}px`;
+    const widthPx = `${Math.round(dockRect.width)}px`;
     const style = this.bannerHost.style;
     if (style.left !== left) style.left = left;
     if (style.bottom !== bottom) style.bottom = bottom;

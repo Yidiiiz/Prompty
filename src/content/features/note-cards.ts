@@ -310,8 +310,11 @@ export class NoteCardManager {
     const submit = () => {
       const text = textarea.value.trim();
       if (!text) return;
+      // hand the composer's position to the pending card so the swap is
+      // seamless — the card mounts in the same frame the composer closes
+      const topPx = this.composer?.el.style.top ?? "";
       this.closeComposer();
-      this.submitNote(kind, anchor, text);
+      this.submitNote(kind, anchor, text, topPx);
     };
     el.querySelector<HTMLButtonElement>("button.primary")!.addEventListener("click", submit);
     el.querySelector<HTMLButtonElement>("button.ghost")!.addEventListener("click", () => this.closeComposer());
@@ -334,7 +337,12 @@ export class NoteCardManager {
 
   /* -------------------------------------------------------------- submit */
 
-  submitNote(kind: "note" | "comment", anchor: GutterAnchor, question: string): void {
+  submitNote(
+    kind: "note" | "comment",
+    anchor: GutterAnchor,
+    question: string,
+    initialTopPx = ""
+  ): void {
     const conversationUuid = this.ctx.getCurrentConversation();
     const tree = this.ctx.getTree();
     if (!conversationUuid || !tree) return;
@@ -367,6 +375,23 @@ export class NoteCardManager {
     };
     this.records.push(record);
     this.live.set(noteId, { question, reply: "", status: "sending" });
+    // Mount the pending card immediately at the composer's position so the
+    // send reads as the composer transforming into the card, not vanishing.
+    const layer = this.ensureGutter();
+    if (layer) {
+      const el = this.buildCardEl(record);
+      if (initialTopPx) el.style.top = initialTopPx;
+      this.renderCard(el, {
+        record,
+        y: 0,
+        anchorState: "ok",
+        question,
+        reply: "",
+        status: "sending",
+      });
+      layer.appendChild(el);
+      this.cardEls.set(noteId, el);
+    }
     // Restore point: the deepest non-note message of the active path — the
     // main thread continues from here after the side branch completes.
     const visible = tree.visiblePath();

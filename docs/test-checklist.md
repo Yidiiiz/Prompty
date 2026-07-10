@@ -75,6 +75,10 @@ touched plus "Cross-cutting".
   and the same click-to-scroll; state persists across reload.
 - ☐ **Responsive fit**: shrink the window — the panel steps full → strip →
   hidden as the margin next to the chat runs out, and returns when widened.
+- ☐ **Branching off the FIRST message keeps the panel**: activate "Branch
+  from here" on message 1, send — the new 2-message branch still shows the
+  full panel (with the branch point); a brand-new 1-turn chat also gets the
+  full panel when space allows.
 - ☐ Note/comment side branches never appear as panel rows, options, or
   counts.
 
@@ -89,7 +93,8 @@ touched plus "Cross-cutting".
 - ☐ Composer opens in the margin at that position; **every keystroke stays in
   the note textarea — nothing appears in the main composer**; Esc cancels;
   ⌘/Ctrl-Enter submits.
-- ☐ On submit the answer **streams into the note card**; the main chat shows
+- ☐ On submit the **composer transforms into the pending card in place** (no
+  disappear/flash), then the answer **streams into it**; the main chat shows
   no new messages; the note question/answer never appear in the chat.
 - ☐ **Context safety**: after a note, send a normal main-thread message and
   verify the reply doesn't reference the note at all; in DevTools confirm the
@@ -145,9 +150,11 @@ touched plus "Cross-cutting".
   reattaches (or an honest "couldn't reattach" notice appears).
 - ☐ Attach >5 MB total, type, reload: banner shows "(attachments not saved)";
   Restore refills text only.
-- ☐ The restore banner **floats above the prompt box** (not inside it), with
-  the secondary-accent left bar; with branch mode also active, the branching
-  header stacks above the banner without overlap.
+- ☐ The restore notice sits **attached flush to the top of the prompt box**,
+  matching its exact width, rounded top corners only, with link-style
+  Restore/Clear — reads like one of the site's own inline notices; with
+  branch mode also active, the branching header stacks above it without
+  overlap.
 - ☐ **Branch draft**: enter branch mode, type, reload, Restore → branch mode
   re-activates on the same target (ghost/hide/header) with text refilled;
   send branches correctly.

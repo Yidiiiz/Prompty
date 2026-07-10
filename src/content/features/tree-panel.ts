@@ -11,9 +11,10 @@
  * quote-chip style (accent left bar, darker background, dark text). Sub-pairs
  * hang off a guide line that ends at the last item.
  *
- * Modes, computed each tick from the real gap between the scroll-area edge
- * and the chat column:
- *   full  — gap fits ~300px (and viewport ≥ 1100px, ≥ 4 messages)
+ * Modes, computed each tick purely from available space (never from the
+ * conversation's length — a short branch must not collapse the panel):
+ *   full  — the gap between the scroll-area edge and the chat column fits
+ *           ~300px and the viewport is ≥ 1100px
  *   strip — icon-only rail (~36px): dots per pair, fork glyphs for branch
  *           points, tooltips, same jump clicks; also the user-collapsed state
  *   hidden — not even the strip fits
@@ -33,7 +34,6 @@ import { NativeArrowsAdapter, type BranchSwitchAdapter } from "../branch-switch"
 import type { Ctx, Feature } from "../ctx";
 
 const MIN_VIEWPORT_FOR_FULL = 1100;
-const MIN_MESSAGES_FOR_FULL = 4;
 const FULL_WIDTH = 280;
 const STRIP_WIDTH = 36;
 const OPTIONS_SHOWN_COLLAPSED = 2;
@@ -307,14 +307,12 @@ export class TreePanelFeature implements Feature {
       return;
     }
 
-    // read phase — the space actually available left of the chat column
+    // read phase — the space actually available left of the chat column.
+    // Purely space-driven: a short active path (e.g. right after branching
+    // off the first message) must NOT collapse the panel.
     const scRect = sc.getBoundingClientRect();
     const gap = column.getBoundingClientRect().left - scRect.left;
-    const pathLength = this.ctx.getTree()?.visiblePath().length ?? 0;
-    this.fullFits =
-      gap >= FULL_WIDTH + 24 &&
-      window.innerWidth >= MIN_VIEWPORT_FOR_FULL &&
-      pathLength >= MIN_MESSAGES_FOR_FULL;
+    this.fullFits = gap >= FULL_WIDTH + 24 && window.innerWidth >= MIN_VIEWPORT_FOR_FULL;
     const stripFits = gap >= STRIP_WIDTH + 16;
     const mode: PanelMode = !stripFits
       ? "hidden"

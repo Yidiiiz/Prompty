@@ -62,9 +62,9 @@ extension card, then reload the claude.ai tab.
   Native `‹ 2/3 ›` arrows and the panel now show the siblings.
 - **Prompt history panel**: spans the page height beside the chat; the chevron
   collapses it to an icon strip (one dot per prompt/response pair, fork
-  glyphs at branch points — state persists). It steps down to the strip on
-  narrow windows or short chats, and hides entirely when not even the strip
-  fits. Branch-point headers show numbered options underneath — the first two
+  glyphs at branch points — state persists). Sizing is purely space-driven:
+  it steps down to the strip on narrow windows and hides entirely when not
+  even the strip fits — the length of the conversation never collapses it. Branch-point headers show numbered options underneath — the first two
   plus a `▸ N more` caret; click one to switch in place (the extension drives
   the native `‹ ›` version arrows for you, stepping directly from any branch
   to any other). Clicking a prompt row highlights its whole bubble; a

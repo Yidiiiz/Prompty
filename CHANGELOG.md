@@ -2,6 +2,28 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.4.0 — 2026-07-10
+
+### Draft autosave
+
+- The restore notice is now **integrated with the chat**, styled like the
+  site's own inline notices: attached flush to the top of the prompt box,
+  matching its exact width, rounded top corners only, muted tint, and
+  link-style **Restore** / **Clear** actions instead of buttons.
+
+### Notes & comments
+
+- Submitting a note/comment no longer makes the composer disappear — it
+  **transforms into the pending card in the same frame**, at the same
+  position, which then streams the reply as before.
+
+### Prompt history panel
+
+- **Branching off the first message no longer hides the tree.** The panel's
+  full/strip/hidden modes are now purely space-driven; the old "fewer than 4
+  messages → collapse" rule (which kicked in whenever a new branch started a
+  short active path) is removed.
+
 ## 0.3.0 — 2026-07-10
 
 Third feedback release: the Prompt history panel rebuilt from the ground up,
