@@ -71,6 +71,12 @@ export const SELECTORS = {
       "Native text-selection popover (fixed, transform-centered). The note button is placed adjacent to, never overlapping, this.",
     optional: true, // only while a selection is active
   },
+  alertBandWrapper: {
+    selector: 'div[data-alert-band-wrapper="true"]',
+    description:
+      "The site's notice band directly above the composer (usage limits etc.). Extension bars (draft restore, branching header) are appended here so they sit exactly where native notices do.",
+    optional: true, // present with the composer; fixed-position fallback exists
+  },
   // NOTE: a `main` landmark entry used to live here; claude.ai stopped
   // rendering one (field-observed) and nothing consumed it, so it was removed
   // rather than producing a permanent false "hooks not found" warning.

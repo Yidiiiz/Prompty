@@ -52,6 +52,8 @@ const PANEL_CSS = `
   button { font-family: inherit; border: none; background: none; cursor: pointer; text-align: left; }
   button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.55)}; outline-offset: 1px; }
 
+  /* Embedded left rail: square corners and INSET shadows so the panel reads
+     as recessed beneath the chat, not floating above it. */
   .panel {
     position: fixed;
     z-index: ${Z_PANEL};
@@ -60,10 +62,11 @@ const PANEL_CSS = `
     width: ${FULL_WIDTH}px;
     font-family: ${FONT_SANS};
     color: ${cssVar("--text-300")};
-    background: ${cssVar("--bg-100", 0.92)};
-    backdrop-filter: blur(12px) saturate(1.05);
-    border-radius: ${UI.radiusLg};
-    box-shadow: ${UI.shadowMd};
+    background: ${cssVar("--bg-200", 0.9)};
+    border-radius: 0;
+    box-shadow:
+      inset -14px 0 18px -14px ${cssVar("--always-black", 0.16)},
+      inset 0 14px 14px -14px ${cssVar("--always-black", 0.07)};
     overflow: hidden;
     transition: width ${UI.transition};
   }
@@ -95,12 +98,14 @@ const PANEL_CSS = `
   .list {
     flex: 1;
     overflow-y: auto; overflow-x: hidden;
-    padding: 0 10px 14px 12px;
+    padding: 0 12px 14px 12px;
     scrollbar-width: thin;
-    scrollbar-color: ${cssVar("--border-200")} transparent;
+    scrollbar-color: ${cssVar("--border-200", 0.35)} transparent;
   }
-  .list::-webkit-scrollbar { width: 5px; }
-  .list::-webkit-scrollbar-thumb { background: ${cssVar("--border-200")}; border-radius: 3px; }
+  .list::-webkit-scrollbar { width: 4px; }
+  .list::-webkit-scrollbar-track { background: transparent; }
+  .list::-webkit-scrollbar-thumb { background: ${cssVar("--border-200", 0.35)}; border-radius: 2px; }
+  .list::-webkit-scrollbar-thumb:hover { background: ${cssVar("--border-200", 0.6)}; }
   .panel.strip .list { padding: 2px 0 10px; }
 
   /* ------------------------------------------------- branch-point header */
@@ -208,6 +213,8 @@ const PANEL_CSS = `
     box-shadow: 0 -1px 0 0 ${cssVar("--border-300", 0.7)};
     font-size: 10.5px; color: ${cssVar("--text-500")};
   }
+  .drawer .dhead { display: block; margin-top: 4px; }
+  .drawer .dhead:first-child { margin-top: 0; }
   .drawer button {
     display: block; width: 100%;
     font-size: 11.5px; color: ${cssVar("--text-300")};
@@ -246,6 +253,7 @@ export class TreePanelFeature implements Feature {
   /** Message uuids whose branch-option list is expanded beyond the first two. */
   private expandedBranches = new Set<string>();
   private drawerItems: Array<{ noteId: string; label: string }> = [];
+  private deletedItems: Array<{ noteId: string; label: string }> = [];
   private lastSignature = "";
   /** Summary memo — summarize() runs regexes over full message text, so it
    *  must not run per node per tick. Keyed by uuid+len (streaming-safe). */
@@ -264,6 +272,7 @@ export class TreePanelFeature implements Feature {
     ctx.bus.on("conversation-changed", () => {
       this.expandedBranches.clear();
       this.drawerItems = [];
+      this.deletedItems = [];
       this.lastSignature = "";
       this.summaryCache.clear();
       this.render();
@@ -271,6 +280,7 @@ export class TreePanelFeature implements Feature {
     ctx.bus.on("unanchored-notes", (msg) => {
       if (msg.conversationUuid !== ctx.getCurrentConversation()) return;
       this.drawerItems = msg.items;
+      this.deletedItems = msg.deletedItems;
       this.lastSignature = "";
       this.render();
     });
@@ -320,10 +330,11 @@ export class TreePanelFeature implements Feature {
         ? "strip"
         : "full";
 
-    const top = Math.round(scRect.top + 8);
-    const left = `${Math.round(scRect.left + 10)}px`;
+    // flush against the scroll area's left edge — embedded, not floating
+    const top = Math.round(scRect.top);
+    const left = `${Math.round(scRect.left)}px`;
     const topPx = `${top}px`;
-    const height = `${Math.max(160, window.innerHeight - top - 12)}px`;
+    const height = `${Math.max(160, window.innerHeight - top)}px`;
 
     // write phase (guarded)
     this.setMode(panel, mode);
@@ -409,6 +420,7 @@ export class TreePanelFeature implements Feature {
       m: this.mode,
       f: this.fullFits,
       d: this.drawerItems,
+      dd: this.deletedItems,
       x: [...this.expandedBranches],
       p: path.map((n) => {
         const sibs = tree!.siblingsOf(n.uuid);
@@ -439,10 +451,20 @@ export class TreePanelFeature implements Feature {
     html += strip ? this.renderStrip(pairs) : this.renderFull(pairs);
     html += `</div>`;
 
-    if (!strip && this.drawerItems.length) {
-      html += `<div class="drawer">Unanchored notes`;
-      for (const item of this.drawerItems) {
-        html += `<button data-act="open-note" data-note="${escapeHtml(item.noteId)}">${escapeHtml(item.label)}</button>`;
+    if (!strip && (this.drawerItems.length || this.deletedItems.length)) {
+      html += `<div class="drawer">`;
+      if (this.drawerItems.length) {
+        html += `<span class="dhead">Unanchored notes</span>`;
+        for (const item of this.drawerItems) {
+          html += `<button data-act="open-note" data-note="${escapeHtml(item.noteId)}">${escapeHtml(item.label)}</button>`;
+        }
+      }
+      if (this.deletedItems.length) {
+        html += `<span class="dhead">Deleted notes</span>`;
+        for (const item of this.deletedItems) {
+          html += `<button data-act="restore-note" data-note="${escapeHtml(item.noteId)}"
+                           title="Click to restore">↩ ${escapeHtml(item.label)}</button>`;
+        }
       }
       html += `</div>`;
     }
@@ -461,9 +483,10 @@ export class TreePanelFeature implements Feature {
   private renderFull(pairs: Pair[]): string {
     let html = "";
     let subs = ""; // open run of ordinary pairs under the current section
+    let inSection = false; // pairs before the first branch point render flat
     const flushSubs = () => {
       if (subs) {
-        html += `<div class="subs">${subs}</div>`;
+        html += inSection ? `<div class="subs">${subs}</div>` : subs;
         subs = "";
       }
     };
@@ -471,6 +494,7 @@ export class TreePanelFeature implements Feature {
       if (this.branchCount(pair.prompt.uuid) > 1) {
         // branch point → section header + options + its own response
         flushSubs();
+        inSection = true;
         html += this.renderHeaderRow(pair.prompt);
         html += this.renderOptions(pair.prompt);
         if (pair.response) {
@@ -598,6 +622,9 @@ export class TreePanelFeature implements Feature {
         break;
       case "open-note":
         this.ctx.bus.emit("unanchored-note-open", { noteId });
+        break;
+      case "restore-note":
+        this.ctx.bus.emit("deleted-note-restore", { noteId });
         break;
     }
   }

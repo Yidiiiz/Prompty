@@ -131,6 +131,7 @@ codebase contains a selector.
 | File input | `[data-testid="file-upload"]` | draft attachment capture |
 | Branch arrows | `button[aria-label="Previous version"]` / `"Next version"` | registered for diagnostics; not clicked (see §5) |
 | Selection popover | `div[data-selection-tooltip="true"]` | note-button placement (adjacent, never overlapping; the popover is fixed, transform-centered, z-index 50, pointer-events auto) |
+| Alert band | `div[data-alert-band-wrapper="true"]` | user-captured (July 2026): the site's notice band above the composer; extension bars are appended here |
 | Landmark | `main` | structural fallback |
 
 `validateSelectors()` runs at startup and logs/toasts required-selector

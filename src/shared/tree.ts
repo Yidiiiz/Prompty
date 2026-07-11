@@ -11,8 +11,9 @@
  *    is derived by walking parents up from `current_leaf_message_uuid`.
  *  - Message text lives in `content[].text` blocks (`type === "text"`); the
  *    top-level `text` field is empty.
- *  - Note/comment side branches are recognized by the NOTE_MARKER prefix and
- *    the whole subtree under a note root is flagged `isNote`.
+ *  - Note/comment messages are recognized by the NOTE_MARKER prefix; a note
+ *    is the marked human message plus its direct assistant reply only —
+ *    the thread continues normally beneath it.
  *
  * Failure behavior: unparseable conversation JSON yields an empty tree and a
  * console warning; features render nothing rather than wrong data.
@@ -117,18 +118,19 @@ export class ConversationTree {
     for (const node of this.nodes.values()) {
       node.children.sort((a, b) => (this.nodes.get(a)?.index ?? 0) - (this.nodes.get(b)?.index ?? 0));
     }
-    // propagate isNote down every note-root subtree
-    for (const node of this.nodes.values()) node.isNote = false;
+    // A note is exactly one hidden PAIR on the thread: the marker-prefixed
+    // human message and its direct assistant reply. Descendants beyond the
+    // reply are normal messages (the conversation continues under a note),
+    // so there is NO subtree propagation.
     for (const node of this.nodes.values()) {
-      if (node.sender === "human" && isNoteText(node.text)) this.markNoteSubtree(node.uuid);
+      node.isNote = node.sender === "human" && isNoteText(node.text);
     }
-  }
-
-  private markNoteSubtree(uuid: string): void {
-    const node = this.nodes.get(uuid);
-    if (!node || node.isNote) return;
-    node.isNote = true;
-    for (const child of node.children) this.markNoteSubtree(child);
+    for (const node of this.nodes.values()) {
+      if (node.sender === "assistant") {
+        const parent = this.nodes.get(node.parentUuid);
+        node.isNote = !!parent?.isNote;
+      }
+    }
   }
 
   /** Root-level messages (children of the virtual sentinel root). */

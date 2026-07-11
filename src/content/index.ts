@@ -73,12 +73,34 @@ function main(): void {
     }
   });
 
+  /**
+   * Hidden in-thread note messages extend the thread past what the app's own
+   * state knows. Whenever a tree changes structurally, tell the page script
+   * how to remap the app's next send: parent == last visible message → real
+   * tail (the newest note reply). Cleared when the leaf is a visible message.
+   */
+  function syncThreadTail(conversationUuid: string): void {
+    const tree = trees.get(conversationUuid);
+    if (!tree) return;
+    let from: string | null = null;
+    let to: string | null = null;
+    let node = tree.activeLeafUuid ? tree.nodes.get(tree.activeLeafUuid) : undefined;
+    if (node?.isNote) {
+      to = node.uuid;
+      while (node && node.isNote) node = tree.nodes.get(node.parentUuid);
+      from = node?.uuid ?? null;
+      if (!from) to = null; // note chain reaches the root: nothing visible to remap
+    }
+    sendToPage({ type: "set-thread-tail", conversationUuid, fromUuid: from, toUuid: to });
+  }
+
   onPageMessage((msg) => {
     switch (msg.type) {
       case "conversation-loaded": {
         const tree = ConversationTree.fromConversation(msg.conversation);
         if (!tree) return;
         trees.set(tree.conversationUuid, tree);
+        syncThreadTail(tree.conversationUuid);
         if (tree.conversationUuid === currentConversation) emitTreeUpdated();
         break;
       }
@@ -96,6 +118,7 @@ function main(): void {
             prompt: msg.prompt,
           });
           streamBuffers.set(msg.turnMessageUuids.assistant_message_uuid, "");
+          syncThreadTail(msg.conversationUuid);
         }
         bus.emit("send-observed", msg);
         if (msg.conversationUuid === currentConversation) emitTreeUpdated();
@@ -123,6 +146,7 @@ function main(): void {
         break;
       case "leaf-switched": {
         trees.get(msg.conversationUuid)?.setLeaf(msg.leafUuid);
+        syncThreadTail(msg.conversationUuid);
         bus.emit("leaf-switched", msg);
         if (msg.conversationUuid === currentConversation) emitTreeUpdated();
         break;

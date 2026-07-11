@@ -27,6 +27,8 @@ export interface NoteRecord {
   /* --- comment (position) anchoring --- */
   anchorText?: string;
   offsetRatio?: number;
+  /** Soft-deleted: hidden from the gutter but restorable from the panel. */
+  deleted?: boolean;
   createdAt: number;
 }
 

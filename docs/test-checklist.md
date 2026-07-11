@@ -96,9 +96,13 @@ touched plus "Cross-cutting".
 - ☐ On submit the **composer transforms into the pending card in place** (no
   disappear/flash), then the answer **streams into it**; the main chat shows
   no new messages; the note question/answer never appear in the chat.
-- ☐ **Context safety**: after a note, send a normal main-thread message and
-  verify the reply doesn't reference the note at all; in DevTools confirm the
-  send's `parent_message_uuid` is the pre-note main leaf.
+- ☐ **In-thread, no branches**: after a note, NO native `‹ 1/2 ›` arrows
+  appear anywhere and the Prompt history panel shows no new branch; in
+  DevTools, the note's own send has `parent_message_uuid` = the previous
+  thread tail.
+- ☐ **Continuation**: send a normal prompt after a note — it continues the
+  conversation (DevTools: its `parent_message_uuid` equals the note reply's
+  uuid, rewritten by the extension); a second note chains under the first.
 - ☐ The card shows quote (muted), question, response; ⤢ opens the fullscreen
   modal with markdown rendering; Esc/✕/backdrop closes it.
 - ☐ **Multiple notes on one message** work; **two notes near the same line
@@ -117,11 +121,12 @@ touched plus "Cross-cutting".
   the message top flagged "anchor moved" (when the anchor message is on the
   rendered path) or moves to the **unanchored notes drawer** at the panel's
   bottom (when the message uuid left the tree entirely).
-- ☐ Delete (🗑): card and local metadata gone; reload → still gone; the branch
-  is still reachable via native arrows (expected, documented).
-- ☐ Note on a message whose native sibling counter previously read `1/1`: the
-  counter now includes the note branch (documented limitation) but the main
-  rendered path is unchanged.
+- ☐ Delete (🗑): the card disappears and **remaining cards shift up
+  immediately**; the note appears under **"Deleted notes"** in the panel
+  drawer; clicking it restores the card; reload → soft-deleted state
+  persists.
+- ☐ Reload after creating notes: the hidden note pair does not appear in the
+  chat or the panel; the card still renders its content from the tree.
 
 ## 4. Comments
 
@@ -150,11 +155,11 @@ touched plus "Cross-cutting".
   reattaches (or an honest "couldn't reattach" notice appears).
 - ☐ Attach >5 MB total, type, reload: banner shows "(attachments not saved)";
   Restore refills text only.
-- ☐ The restore notice sits **attached flush to the top of the prompt box**,
-  matching its exact width, rounded top corners only, with link-style
-  Restore/Clear — reads like one of the site's own inline notices; with
-  branch mode also active, the branching header stacks above it without
-  overlap.
+- ☐ The restore notice renders **inside the site's alert band** above the
+  prompt box (exactly where native notices appear — fully visible, rounded
+  top, hairline ring), with link-style Restore/Clear; with branch mode also
+  active, both bars stack in the band without overlap; both heal after the
+  app re-renders the composer area (e.g. window resize).
 - ☐ **Branch draft**: enter branch mode, type, reload, Restore → branch mode
   re-activates on the same target (ghost/hide/header) with text refilled;
   send branches correctly.

@@ -113,9 +113,11 @@ fetch.
    reload; the API path remains for when the arrows are unavailable, since
    the SPA exposes no external re-render hook.
 3. **Note content is not duplicated locally** — cards render the question/reply
-   from the note's own branch in the conversation tree (server-persistent,
-   cross-device); storage holds anchors only. Live streams overlay until the
-   post-send tree refetch lands.
+   from the note's own (hidden, in-thread as of 0.5.0) messages in the
+   conversation tree (server-persistent, cross-device); storage holds anchors
+   only. Live streams overlay until the post-send tree refetch lands. The
+   page script reparents the app's next send past the hidden pair
+   (`set-thread-tail`), so no branches are ever created.
 4. **Design tokens via CSS var inheritance into shadow roots** — no JS token
    reads or theme observers needed; bundled HSL fallbacks keep the UI legible
    if tokens vanish.

@@ -42,10 +42,16 @@ export interface BusEvents {
   "note-stream-done": { noteId: string; text: string; stopReason: string | null };
   "note-send-failed": { noteId: string; reason: string };
   "settings-changed": Settings;
-  /** Notes whose anchor message no longer exists; rendered in the panel's drawer. */
-  "unanchored-notes": { conversationUuid: string; items: Array<{ noteId: string; label: string }> };
+  /** Drawer feed: unanchored notes plus soft-deleted (restorable) notes. */
+  "unanchored-notes": {
+    conversationUuid: string;
+    items: Array<{ noteId: string; label: string }>;
+    deletedItems: Array<{ noteId: string; label: string }>;
+  };
   /** Panel drawer click-through: ask the notes feature to open this note. */
   "unanchored-note-open": { noteId: string };
+  /** Panel drawer click-through: restore a soft-deleted note. */
+  "deleted-note-restore": { noteId: string };
   /** Note/comment composer text changed (draft autosave listens). */
   "note-composer-input": {
     conversationUuid: string;

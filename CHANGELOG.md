@@ -2,6 +2,57 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.5.0 — 2026-07-10
+
+### Notes & comments are now in-thread (no more branches)
+
+- A note/comment is sent as a **hidden message on the current branch**,
+  parented to the real thread tail — it creates **no branch**: no native
+  `‹ 1/2 ›` arrows appear, nothing shows up in the Prompt history tree, and
+  the next prompt you send continues **underneath** the note (the extension
+  transparently reparents the app's next send past the hidden pair).
+- The note pair stays hidden from the chat (including after reloads) and
+  from the panel; its content still renders only in the margin card.
+- **Trade-off (user-approved)**: the note Q&A is now part of the model's
+  context for subsequent replies. Each note's built-in instructions tell the
+  model to treat it as a small side question.
+- Notes created before 0.5.0 remain side branches in the conversation data;
+  their cards still work, but their old branches stay visible to the native
+  arrows.
+
+### Note deletion
+
+- Deleting a note is now a **soft delete**: remaining cards shift up
+  immediately, and the note appears under **"Deleted notes"** in the panel's
+  drawer, where one click restores it.
+
+### Composer-top bars
+
+- The draft-restore notice and the branching header are now inserted into
+  the **site's own alert band** above the prompt box (the placement native
+  notices use), fixing the half-overlapped banner. They match the native
+  band's shape (20px top rounding, hairline inset ring) and heal themselves
+  if the app re-renders the composer area. A fixed-position fallback remains
+  if the band disappears.
+
+### Prompt history panel
+
+- **Embedded left rail**: the panel now sits flush against the left edge
+  with square corners and inset shadows, reading as recessed beneath the
+  chat instead of floating over it; same treatment for the minimized strip.
+- **Branch-less chats render flat**: pairs before the first branch point
+  (or in chats with no branches at all) lose the indent and guide line — a
+  clean simple list.
+- Custom 4px scrollbar at low opacity.
+
+### Styling
+
+- **Shadows reworked** to the site's own recipe (captured live): one tight
+  low-alpha drop shadow plus a half-pixel token-driven ring that hugs each
+  element exactly — no more oversized halos.
+- Note/comment composer textarea and Cancel button borders softened to 40%
+  opacity.
+
 ## 0.4.0 — 2026-07-10
 
 ### Draft autosave

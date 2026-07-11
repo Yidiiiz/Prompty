@@ -44,9 +44,10 @@ import { toastOnce } from "../toast";
 import {
   attachFilesToComposer,
   getComposerDock,
-  getComposerDockRect,
   getComposerEl,
   getComposerText,
+  placeFixedAboveComposer,
+  placeInAlertBand,
   setComposerText,
 } from "../composer";
 import type { Ctx, Feature } from "../ctx";
@@ -157,11 +158,8 @@ export class DraftsFeature implements Feature {
         if (this.enabled) this.saveMain();
       });
     }
-    // keep the floating banner aligned above the prompt box
-    if (this.bannerHost) {
-      if (!this.bannerHost.isConnected) document.body.appendChild(this.bannerHost);
-      this.positionBanner();
-    }
+    // park the banner in the site's alert band (fixed fallback if missing)
+    if (this.bannerHost) this.placeBanner();
   }
 
   private isInComposer(target: EventTarget | null): boolean {
@@ -285,8 +283,6 @@ export class DraftsFeature implements Feature {
     this.removeBanner();
     const host = document.createElement("div");
     host.id = "pt-draft-banner";
-    // floats above the prompt box instead of sitting inside its container
-    host.style.cssText = `position:fixed;z-index:${Z_PANEL};pointer-events:none;`;
     const shadow = host.attachShadow({ mode: "open" });
     const firstLine = (draft.text.split("\n").find((l) => l.trim()) ?? "(attachments only)").slice(0, 120);
     const extras: string[] = [];
@@ -294,19 +290,16 @@ export class DraftsFeature implements Feature {
     if (draft.attachmentsSkipped) extras.push("attachments not saved");
     shadow.innerHTML = `
       <style>
-        :host { all: initial; }
-        /* styled like the site's own inline notices (usage limits) that sit
-           attached to the top of the prompt box: flush, tinted, link actions */
+        :host { all: initial; display: block; }
+        /* mirrors the site's own alert band that sits above the prompt box */
         .banner {
-          pointer-events: auto;
           display: flex; align-items: center; gap: 10px;
           font-family: ${FONT_SANS}; font-size: 12px; line-height: 1.4;
           color: ${cssVar("--text-300")};
-          background: ${cssVar("--bg-200", 0.97)};
-          backdrop-filter: blur(8px);
-          border-radius: ${UI.radiusMd} ${UI.radiusMd} 0 0;
-          box-shadow: 0 -4px 16px hsl(0 0% 0% / 0.06);
-          padding: 7px 16px;
+          background: ${cssVar("--bg-200", 0.7)};
+          border-radius: 20px 20px 0 0;
+          box-shadow: inset 0 0 0 0.5px ${cssVar("--border-300", 0.18)};
+          padding: 8px 16px 9px;
           overflow: hidden; white-space: nowrap;
         }
         .head { font-style: italic; color: ${cssVar("--text-400")}; flex: none; }
@@ -339,22 +332,16 @@ export class DraftsFeature implements Feature {
     });
     this.bannerHost = host;
     this.bannerForConversation = draft.conversationUuid;
-    document.body.appendChild(host);
-    this.positionBanner();
+    this.placeBanner();
   }
 
-  /** Keeps the banner attached flush to the top of the prompt box. */
-  private positionBanner(): void {
+  /** Native alert-band placement, fixed-position fallback. */
+  private placeBanner(): void {
     if (!this.bannerHost) return;
-    const dockRect = getComposerDockRect();
-    if (!dockRect) return;
-    const left = `${Math.round(dockRect.left)}px`;
-    const bottom = `${Math.round(window.innerHeight - dockRect.top)}px`;
-    const widthPx = `${Math.round(dockRect.width)}px`;
-    const style = this.bannerHost.style;
-    if (style.left !== left) style.left = left;
-    if (style.bottom !== bottom) style.bottom = bottom;
-    if (style.width !== widthPx) style.width = widthPx;
+    if (!placeInAlertBand(this.bannerHost)) {
+      if (!this.bannerHost.isConnected) document.body.appendChild(this.bannerHost);
+      placeFixedAboveComposer(this.bannerHost, Z_PANEL);
+    }
   }
 
   private removeBanner(): void {

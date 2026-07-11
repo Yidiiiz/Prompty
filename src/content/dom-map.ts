@@ -19,6 +19,7 @@
  * gracefully per row rather than mis-targeting.
  */
 import { qa, sel } from "../shared/selectors";
+import { isNoteText } from "../shared/note-protocol";
 import type { ConversationTree, TreeNode } from "../shared/tree";
 
 export interface DomRow {
@@ -136,14 +137,36 @@ export class DomMap {
       uuid: null,
     }));
 
-    // Align to the active path by sender sequence.
+    // Align rows to the active path. Note pairs live ON the path but are
+    // only rendered after a reload (the app never learns of them live), so
+    // plain sender-order alignment would mis-map everything after a note.
+    // Pass 1 maps rendered note rows (marker-prefixed text) to note nodes;
+    // pass 2 maps everything else to the non-note nodes by sender order.
     if (tree) {
       const path: TreeNode[] = tree.activePath();
+      const noteHumans = path.filter((n) => n.isNote && n.sender === "human");
+      let noteIdx = 0;
+      for (let i = 0; i < domRows.length; i++) {
+        const row = domRows[i]!;
+        if (row.sender !== "human") continue;
+        if (!isNoteText((row.el.textContent ?? "").trimStart())) continue;
+        const node = noteHumans[noteIdx++];
+        if (!node) break;
+        row.uuid = node.uuid;
+        const reply = path[path.indexOf(node) + 1];
+        const nextRow = domRows[i + 1];
+        if (reply?.isNote && reply.sender === "assistant" && nextRow?.sender === "assistant") {
+          nextRow.uuid = reply.uuid;
+          i++;
+        }
+      }
+      const visibleNodes = path.filter((n) => !n.isNote);
       let pathIdx = 0;
       for (const row of domRows) {
-        while (pathIdx < path.length && path[pathIdx]!.sender !== row.sender) pathIdx++;
-        if (pathIdx < path.length) {
-          row.uuid = path[pathIdx]!.uuid;
+        if (row.uuid) continue;
+        while (pathIdx < visibleNodes.length && visibleNodes[pathIdx]!.sender !== row.sender) pathIdx++;
+        if (pathIdx < visibleNodes.length) {
+          row.uuid = visibleNodes[pathIdx]!.uuid;
           pathIdx++;
         }
       }

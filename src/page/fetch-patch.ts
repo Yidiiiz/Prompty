@@ -42,6 +42,12 @@ const RE_LEAF = new RegExp(
 let orgUuid: string | null = null;
 /** conversation uuid -> parent uuid to inject into the next app send (branch-compose). */
 const parentOverrides = new Map<string, string>();
+/**
+ * conversation uuid -> {from, to}: hidden in-thread note messages extended
+ * the thread past what the app knows, so an app send parented to `from` (the
+ * last VISIBLE message) is rewritten to `to` (the real tail, a note reply).
+ */
+const threadTails = new Map<string, { from: string; to: string }>();
 /** conversation uuid -> last full app send payload (template for side-branch sends). */
 const sendTemplates = new Map<string, Record<string, unknown>>();
 /** conversation uuid -> model id (from tree loads and sends). */
@@ -54,6 +60,15 @@ export function getOrgUuid(): string | null {
 export function setParentOverride(conversationUuid: string, parentUuid: string | null): void {
   if (parentUuid === null) parentOverrides.delete(conversationUuid);
   else parentOverrides.set(conversationUuid, parentUuid);
+}
+
+export function setThreadTail(
+  conversationUuid: string,
+  fromUuid: string | null,
+  toUuid: string | null
+): void {
+  if (fromUuid && toUuid) threadTails.set(conversationUuid, { from: fromUuid, to: toUuid });
+  else threadTails.delete(conversationUuid);
 }
 
 export function getSendTemplate(conversationUuid: string): Record<string, unknown> | null {
@@ -169,6 +184,18 @@ async function handleCompletion(
     parentOverrides.delete(conversationUuid);
     rewriteApplied = true;
   }
+  // Thread-tail: the app doesn't know about hidden in-thread note messages;
+  // a send parented to the last visible message continues under the notes
+  // instead of branching around them. Branch-compose (above) takes priority
+  // and this flag intentionally stays false — it drives branch-mode exit.
+  let bodyChanged = rewriteApplied;
+  if (!rewriteApplied) {
+    const tail = threadTails.get(conversationUuid);
+    if (tail && payload["parent_message_uuid"] === tail.from) {
+      payload["parent_message_uuid"] = tail.to;
+      bodyChanged = true;
+    }
+  }
 
   if (typeof payload["model"] === "string") models.set(conversationUuid, payload["model"]);
   sendTemplates.set(conversationUuid, payload);
@@ -185,7 +212,7 @@ async function handleCompletion(
     isNewConversation: payload["create_conversation_params"] !== undefined,
   });
 
-  const res = await forward(input, init, rewriteApplied ? JSON.stringify(payload) : null);
+  const res = await forward(input, init, bodyChanged ? JSON.stringify(payload) : null);
   if (!res.ok) {
     postToContent({ type: "send-failed", conversationUuid, status: res.status });
     return res;

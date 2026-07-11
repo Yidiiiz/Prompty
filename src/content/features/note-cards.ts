@@ -11,14 +11,16 @@
  *    delete), Google-Docs-style collision push-down, and connector lines;
  *  - the single note/comment composer (typed in the gutter, never the main
  *    composer) and the whole submit flow: build the !@#%NOTE!@ prompt, send
- *    as a side branch via the page script, persist anchoring metadata the
- *    moment the pre-generated uuids are known, stream into the card;
- *  - the fullscreen modal; the unanchored-notes drawer feed for the panel.
+ *    it as a hidden IN-THREAD message parented to the current thread tail
+ *    (no branch is created; the conversation — and its context — continues
+ *    underneath the note), persist anchoring metadata the moment the
+ *    pre-generated uuids are known, stream into the card;
+ *  - the fullscreen modal; the unanchored/deleted drawer feed for the panel.
  *
- * Note content is read from Claude's own tree (the side branch persists
- * server-side); chrome.storage holds only anchoring metadata. Deleting a note
- * removes local metadata and the card; the branch remains, orphaned and
- * harmless.
+ * Note content is read from the conversation tree itself (the hidden pair
+ * persists server-side); chrome.storage holds only anchoring metadata.
+ * Deleting a note is a soft delete: the card disappears but the record stays
+ * restorable from the panel's "Deleted notes" drawer.
  *
  * Failure behavior: an unresolvable quote pins the card to the message top
  * flagged "anchor moved"; a missing anchor message routes the note to the
@@ -30,15 +32,10 @@ import { renderMarkdown } from "../../shared/markdown";
 import { buildNotePrompt, parseNotePrompt, type NoteMeta } from "../../shared/note-protocol";
 import { summarizer } from "../../shared/summary";
 import { uuidv7 } from "../../shared/uuid";
-import {
-  deleteNote,
-  getNotes,
-  saveNote,
-  type NoteRecord,
-} from "../../shared/storage";
+import { getNotes, saveNote, type NoteRecord } from "../../shared/storage";
 import { clamp } from "../../shared/util";
 import type { ConversationTree } from "../../shared/tree";
-import { subscribe } from "../observer";
+import { requestTick, subscribe } from "../observer";
 import { toastOnce } from "../toast";
 import { getComposerDockRect } from "../composer";
 import type { Ctx } from "../ctx";
@@ -139,6 +136,7 @@ export class NoteCardManager {
       toastOnce(`note-failed-${msg.noteId}`, `Prompt Tree: note failed — ${msg.reason}`);
     });
     ctx.bus.on("unanchored-note-open", (msg) => this.openModal(msg.noteId));
+    ctx.bus.on("deleted-note-restore", (msg) => void this.restoreNote(msg.noteId));
     // initial conversation (constructor runs after navigation may have settled)
     const conv = ctx.getCurrentConversation();
     if (conv) void this.loadRecords(conv);
@@ -325,12 +323,14 @@ export class NoteCardManager {
     if (y !== null) el.style.top = `${Math.max(0, Math.round(y))}px`;
     layer.appendChild(el);
     textarea.focus({ preventScroll: true });
+    requestTick(); // shadow-DOM insert doesn't wake the observer: lay out now
   }
 
   closeComposer(): void {
     if (!this.composer) return;
     this.composer.el.remove();
     this.composer = null;
+    requestTick();
     const conversationUuid = this.ctx.getCurrentConversation();
     if (conversationUuid) this.ctx.bus.emit("note-composer-closed", { conversationUuid });
   }
@@ -391,18 +391,19 @@ export class NoteCardManager {
       });
       layer.appendChild(el);
       this.cardEls.set(noteId, el);
+      requestTick();
     }
-    // Restore point: the deepest non-note message of the active path — the
-    // main thread continues from here after the side branch completes.
-    const visible = tree.visiblePath();
-    const restoreLeafUuid = visible.length ? visible[visible.length - 1]!.uuid : tree.activeLeafUuid;
+    // The note goes ON the current branch: parent it to the real thread tail
+    // (which may itself be a previous note's reply). No branch is created and
+    // the conversation continues underneath — the anchor lives only in the
+    // metadata JSON and the local record.
+    const parentMessageUuid = tree.activeLeafUuid ?? anchor.anchorMessageUuid;
     this.ctx.sendToPage({
       type: "send-side-branch",
       noteId,
       conversationUuid,
-      parentMessageUuid: anchor.anchorMessageUuid,
+      parentMessageUuid,
       prompt: buildNotePrompt(meta, question),
-      restoreLeafUuid,
     });
   }
 
@@ -424,16 +425,28 @@ export class NoteCardManager {
 
   /* ------------------------------------------------------ delete / modal */
 
+  /** Soft delete: the card goes away instantly; the record stays restorable
+   *  from the panel's "Deleted notes" drawer. */
   private async removeNote(noteId: string): Promise<void> {
-    const conversationUuid = this.ctx.getCurrentConversation();
-    this.records = this.records.filter((r) => r.noteId !== noteId);
-    this.live.delete(noteId);
+    const record = this.records.find((r) => r.noteId === noteId);
+    if (!record) return;
+    record.deleted = true;
     this.cardEls.get(noteId)?.remove();
     this.cardEls.delete(noteId);
     this.connEls.get(noteId)?.remove();
     this.connEls.delete(noteId);
-    if (conversationUuid) await deleteNote(conversationUuid, noteId);
-    this.lastUnanchoredSig = ""; // force the drawer feed to re-emit next tick
+    this.lastUnanchoredSig = ""; // force the drawer feed to re-emit
+    requestTick(); // shadow-DOM removal doesn't wake the observer: relayout now
+    await saveNote(record);
+  }
+
+  private async restoreNote(noteId: string): Promise<void> {
+    const record = this.records.find((r) => r.noteId === noteId);
+    if (!record?.deleted) return;
+    record.deleted = false;
+    this.lastUnanchoredSig = "";
+    requestTick();
+    await saveNote(record);
   }
 
   openModal(noteId: string): void {
@@ -541,7 +554,7 @@ export class NoteCardManager {
     const resolved: ResolvedCard[] = [];
     const unanchored: NoteRecord[] = [];
     for (const record of this.records) {
-      if (!this.kinds[record.kind]) continue;
+      if (record.deleted || !this.kinds[record.kind]) continue;
       const row = this.ctx.domMap.rowByUuid(record.anchorMessageUuid);
       if (!row) {
         if (tree.nodes.has(record.anchorMessageUuid)) continue; // off-path or unrendered: no card, not unanchored
@@ -745,14 +758,15 @@ export class NoteCardManager {
   private emitUnanchoredList(unanchored: NoteRecord[]): void {
     const conversationUuid = this.ctx.getCurrentConversation();
     if (!conversationUuid) return;
-    const items = unanchored.map((r) => ({
-      noteId: r.noteId,
-      label: summarizer.summarize(this.resolveContent(r).question, 6),
-    }));
-    const sig = JSON.stringify(items);
+    const label = (r: NoteRecord) => summarizer.summarize(this.resolveContent(r).question, 6);
+    const items = unanchored.map((r) => ({ noteId: r.noteId, label: label(r) }));
+    const deletedItems = this.records
+      .filter((r) => r.deleted && this.kinds[r.kind])
+      .map((r) => ({ noteId: r.noteId, label: label(r) }));
+    const sig = JSON.stringify([items, deletedItems]);
     if (sig === this.lastUnanchoredSig) return;
     this.lastUnanchoredSig = sig;
-    this.ctx.bus.emit("unanchored-notes", { conversationUuid, items });
+    this.ctx.bus.emit("unanchored-notes", { conversationUuid, items, deletedItems });
   }
 }
 
@@ -835,7 +849,7 @@ const CARD_BASE_CSS = `
     font-family: ${FONT_SANS}; font-size: 12px; line-height: 1.5;
     color: ${cssVar("--text-100")};
     background: ${cssVar("--bg-100")};
-    border: 1px solid ${cssVar("--border-200")};
+    border: 1px solid ${cssVar("--border-200", 0.4)};
     border-radius: ${UI.radiusSm}; padding: 7px 9px; outline: none;
     transition: border-color ${UI.transition};
   }
@@ -850,8 +864,8 @@ const CARD_BASE_CSS = `
   .card .foot .primary:hover { background: ${cssVar("--accent-main-200")}; }
   .card .foot .primary:active { transform: scale(0.98); }
   .card .foot .ghost {
-    border: 1px solid ${cssVar("--border-200")}; background: none; cursor: pointer;
-    border-radius: ${UI.radiusSm}; padding: 4px 12px; color: ${cssVar("--text-300")};
+    border: 1px solid ${cssVar("--border-200", 0.4)}; background: none; cursor: pointer;
+    border-radius: ${UI.radiusSm}; padding: 4px 12px; color: ${cssVar("--text-400")};
     font-family: inherit; font-size: 12px;
     transition: background ${UI.transition}, color ${UI.transition};
   }

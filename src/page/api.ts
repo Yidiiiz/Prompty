@@ -121,16 +121,16 @@ function buildSideBranchPayload(
 }
 
 /**
- * Sends a note/comment as a side branch and streams the reply back under
- * `noteId`. Afterwards restores the main leaf and refetches the tree so the
- * ConversationTree model includes the new branch.
+ * Sends a note/comment as a hidden in-thread message (parented to the
+ * current thread tail — no branch is created) and streams the reply back
+ * under `noteId`. Afterwards refetches the tree so the ConversationTree
+ * model includes the new pair.
  */
 export async function sendSideBranch(cmd: {
   noteId: string;
   conversationUuid: string;
   parentMessageUuid: string;
   prompt: string;
-  restoreLeafUuid: string | null;
 }): Promise<void> {
   const fail = (reason: string) =>
     postToContent({ type: "note-send-failed", noteId: cmd.noteId, reason });
@@ -184,9 +184,8 @@ export async function sendSideBranch(cmd: {
     return;
   }
 
-  // Restore the main thread's active leaf so the next normal message
-  // continues the main conversation, then sync the model.
-  if (cmd.restoreLeafUuid) await putLeaf(cmd.conversationUuid, cmd.restoreLeafUuid);
+  // The leaf now correctly ends on the note's reply (the conversation
+  // continues under it); just sync the model.
   await fetchTree(cmd.conversationUuid);
 
   if (result.ok) {

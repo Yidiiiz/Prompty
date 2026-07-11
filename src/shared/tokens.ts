@@ -38,6 +38,7 @@ export const TOKEN_FALLBACKS: Record<string, string> = {
   "--accent-secondary-100": "210 55% 47%",
   "--danger-100": "0 64% 45%",
   "--oncolor-100": "0 0% 100%",
+  "--always-black": "0 0% 0%",
 };
 
 export const FONT_SANS =
@@ -56,16 +57,14 @@ export const UI = {
   radiusMd: "12px",
   radiusLg: "16px",
   /**
-   * Layered, soft shadows (small = resting card, large = overlay). Surfaces
-   * are borderless by design; the faint 1px ring keeps a crisp edge in light
-   * mode without reading as a border.
+   * The site's own shadow recipe (captured from the live composer): one
+   * tight, low-alpha drop shadow plus a half-pixel token-driven ring that
+   * hugs the element exactly — no oversized halos. Surfaces are borderless
+   * by design; the ring provides the crisp edge and follows the theme.
    */
-  shadowSm:
-    "0 0 0 1px hsl(0 0% 0% / 0.04), 0 1px 2px hsl(0 0% 0% / 0.05), 0 3px 10px hsl(0 0% 0% / 0.08)",
-  shadowMd:
-    "0 0 0 1px hsl(0 0% 0% / 0.04), 0 2px 6px hsl(0 0% 0% / 0.07), 0 10px 28px hsl(0 0% 0% / 0.12)",
-  shadowLg:
-    "0 0 0 1px hsl(0 0% 0% / 0.05), 0 8px 16px hsl(0 0% 0% / 0.12), 0 24px 64px hsl(0 0% 0% / 0.22)",
+  shadowSm: `0 0.25rem 1.25rem ${cssVar("--always-black", 0.035)}, 0 0 0 0.5px ${cssVar("--border-300", 0.15)}`,
+  shadowMd: `0 0.25rem 1.25rem ${cssVar("--always-black", 0.075)}, 0 0 0 0.5px ${cssVar("--border-200", 0.3)}`,
+  shadowLg: `0 0.75rem 2rem ${cssVar("--always-black", 0.12)}, 0 0 0 0.5px ${cssVar("--border-200", 0.3)}`,
   /** Single motion voice. */
   transition: "150ms cubic-bezier(0.2, 0, 0.2, 1)",
 } as const;

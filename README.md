@@ -15,9 +15,12 @@ power-user tools built on its real conversation structure:
   click any row to scroll to that message. Collapses to an icon strip, and
   steps down to the strip or hides itself when the window is too narrow.
 - **Notes** — highlight text in an assistant reply and ask a small margin
-  question about it. The Q&A is sent as a *side branch* of the conversation
-  tree, so it is **never part of the main thread's context**, yet it persists
-  in the conversation itself across reloads and devices.
+  question about it. The Q&A is sent as a **hidden message on the current
+  branch** — no branch is created, no version arrows appear, and the
+  conversation continues underneath it. It persists in the conversation
+  across reloads and devices, rendered only in the margin. (Because it lives
+  on the thread, the note Q&A is part of the model's context for later
+  replies; each note instructs the model to treat it as a side question.)
 - **Comments** — the same margin Q&A anchored to a position in the reply
   (Google-Docs-style "+" on hover) instead of a highlight.
 - **Draft autosave** — composer drafts (including branch/note/comment drafts
@@ -72,9 +75,9 @@ extension card, then reload the claude.ai tab.
 - **Notes**: select text in an assistant reply → click the ✎ button in the
   right margin (next to, never over, the native selection popover) → type the
   question in the margin composer (⌘/Ctrl-Enter sends). The answer streams into
-  the card. ⤢ expands to a full markdown modal; 🗑 removes the note's local
-  anchor (the side branch stays in the conversation tree, orphaned and
-  harmless).
+  the card. ⤢ expands to a full markdown modal; 🗑 soft-deletes the note —
+  restore it any time from "Deleted notes" at the bottom of the Prompt
+  history panel.
 - **Comments**: hover a reply with nothing selected → click the **+** in the
   margin.
 - **Drafts**: just type; everything is saved automatically per conversation.
@@ -126,9 +129,11 @@ so the next breakage is diagnosable.
   way. If the arrows can't be found (site update, message unmounted), the
   extension falls back to the API path (leaf PUT) plus a one-time page reload
   — both mechanisms are isolated in `BranchSwitchAdapter`.
-- **Native branch counters include note branches.** A message with one note
-  shows `‹ 1/2 ›` in claude.ai's own UI; the extension can't hide native
-  counters. The Prompt Tree panel excludes note branches from its own badges.
+- **Notes are part of the context.** In-thread notes (0.5.0+) create no
+  branches and no native counters, but their Q&A is visible to the model in
+  later turns. Notes made before 0.5.0 remain side branches: those old
+  branches still show in the native `‹ 1/2 ›` counters (their cards keep
+  working).
 - **Retry streams update the panel when they finish**, not token-by-token (the
   retry request carries no pre-generated uuids; the model resyncs on
   completion).
@@ -137,8 +142,9 @@ so the next breakage is diagnosable.
   synthetic drop that claude.ai may ignore after an update (you get a notice
   and can re-add manually). Attachments over 5 MB total are not saved (banner
   says so).
-- **Deleting a note deletes only the local anchor.** The side branch remains in
-  the conversation tree (visible via native arrows if you go looking).
+- **Deleting a note hides it; the messages remain.** Deletion is a soft
+  delete (restorable from the panel drawer); the hidden note pair stays in
+  the conversation data either way.
 
 ## Development
 

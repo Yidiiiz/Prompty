@@ -79,9 +79,9 @@ export type ContentToPageMessage =
       parentMessageUuid: string | null;
     }
   /**
-   * Send a note/comment as a side branch: raw completion POST (never through
-   * the app), stream events back under `noteId`, then restore the main leaf
-   * and refetch the tree.
+   * Send a note/comment as a hidden in-thread message: raw completion POST
+   * (never through the app) parented to the current thread tail, stream
+   * events back under `noteId`, then refetch the tree.
    */
   | {
       type: "send-side-branch";
@@ -89,7 +89,18 @@ export type ContentToPageMessage =
       conversationUuid: string;
       parentMessageUuid: string;
       prompt: string;
-      restoreLeafUuid: string | null;
+    }
+  /**
+   * The thread's real tail differs from what the app believes because hidden
+   * note messages extended it: an app send parented to `fromUuid` must be
+   * rewritten to `toUuid` so the conversation continues UNDER the notes
+   * instead of branching around them. Nulls clear the mapping.
+   */
+  | {
+      type: "set-thread-tail";
+      conversationUuid: string;
+      fromUuid: string | null;
+      toUuid: string | null;
     }
   /** Switch the active leaf via PUT; optionally refetch the tree after. */
   | { type: "switch-leaf"; conversationUuid: string; leafUuid: string; refetchTree: boolean }

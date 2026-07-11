@@ -23,7 +23,7 @@ import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { summarizer } from "../../shared/summary";
 import { q } from "../../shared/selectors";
 import { toastOnce } from "../toast";
-import { getComposerDockRect } from "../composer";
+import { getComposerDockRect, placeFixedAboveComposer, placeInAlertBand } from "../composer";
 import { subscribe } from "../observer";
 import type { Ctx, Feature } from "../ctx";
 
@@ -194,27 +194,18 @@ export class BranchComposeFeature implements Feature {
     this.headerHost = null;
   }
 
-  /** Keeps the floating header aligned just above the prompt box. */
-  private positionHeader(): void {
+  /** Native alert-band placement, fixed-position fallback. */
+  private placeHeader(): void {
     if (!this.headerHost) return;
-    const dockRect = getComposerDockRect();
-    if (!dockRect) return;
-    const width = Math.min(dockRect.width, 720);
-    const left = `${Math.round(dockRect.left + (dockRect.width - width) / 2)}px`;
-    // stack above the draft-restore banner when both are showing
-    const banner = document.getElementById("pt-draft-banner");
-    const lift = banner ? banner.offsetHeight + 8 : 0;
-    const bottom = `${Math.round(window.innerHeight - dockRect.top + 8 + lift)}px`;
-    const widthPx = `${Math.round(width)}px`;
-    const style = this.headerHost.style;
-    if (style.left !== left) style.left = left;
-    if (style.bottom !== bottom) style.bottom = bottom;
-    if (style.width !== widthPx) style.width = widthPx;
+    if (!placeInAlertBand(this.headerHost)) {
+      if (!this.headerHost.isConnected) document.body.appendChild(this.headerHost);
+      placeFixedAboveComposer(this.headerHost, Z_PANEL);
+    }
   }
 
   private ensureHeader(mode: ModeState): void {
     if (this.headerHost?.isConnected) {
-      this.positionHeader();
+      this.placeHeader();
       return;
     }
     if (!getComposerDockRect()) {
@@ -224,28 +215,20 @@ export class BranchComposeFeature implements Feature {
     const label = summarizer.summarize(this.ctx.getTree()?.nodes.get(mode.targetUuid)?.text ?? "", 8);
     const host = document.createElement("div");
     host.id = "pt-branch-header";
-    // floats above the prompt box instead of sitting inside its container
-    host.style.cssText = `position:fixed;z-index:${Z_PANEL};pointer-events:none;`;
     const shadow = host.attachShadow({ mode: "open" });
     shadow.innerHTML = `
       <style>
-        :host { all: initial; }
+        :host { all: initial; display: block; }
+        /* mirrors the site's own alert band that sits above the prompt box */
         .bar {
-          pointer-events: auto;
           display: flex; align-items: center; gap: 10px;
           font-family: ${FONT_SANS}; font-size: 12.5px; line-height: 1.4;
           color: ${cssVar("--text-100")};
-          background: ${cssVar("--bg-200", 0.97)};
-          backdrop-filter: blur(8px);
-          box-shadow: inset 3px 0 0 0 ${cssVar("--accent-main-100", 0.8)}, ${UI.shadowMd};
-          border-radius: 0 ${UI.radiusMd} ${UI.radiusMd} 0;
-          padding: 7px 8px 7px 14px;
+          background: ${cssVar("--bg-200", 0.7)};
+          border-radius: 20px 20px 0 0;
+          box-shadow: inset 0 0 0 0.5px ${cssVar("--border-300", 0.18)};
+          padding: 8px 16px 9px;
           white-space: nowrap; overflow: hidden;
-          animation: pt-bar-in 160ms ease-out;
-        }
-        @keyframes pt-bar-in {
-          from { opacity: 0; transform: translateY(4px); }
-          to { opacity: 1; transform: translateY(0); }
         }
         .glyph { flex: none; color: ${cssVar("--accent-main-200")}; display: flex; }
         .label { overflow: hidden; text-overflow: ellipsis; flex: 1; }
@@ -268,8 +251,7 @@ export class BranchComposeFeature implements Feature {
       </div>`;
     shadow.querySelector("em")!.textContent = `“${label}”`;
     shadow.querySelector("button")!.addEventListener("click", () => this.cancel());
-    document.body.appendChild(host);
     this.headerHost = host;
-    this.positionHeader();
+    this.placeHeader();
   }
 }

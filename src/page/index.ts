@@ -11,7 +11,7 @@
  * (logged); claude.ai itself is unaffected because patches install
  * defensively.
  */
-import { installFetchPatch, setParentOverride, onRetryCompleted } from "./fetch-patch";
+import { installFetchPatch, setParentOverride, setThreadTail, onRetryCompleted } from "./fetch-patch";
 import { installHistoryPatch } from "./history-patch";
 import { fetchTree, switchLeaf, sendSideBranch } from "./api";
 import { onContentMessage, postToContent } from "./bridge";
@@ -30,6 +30,9 @@ try {
     switch (msg.type) {
       case "set-parent-override":
         setParentOverride(msg.conversationUuid, msg.parentMessageUuid);
+        break;
+      case "set-thread-tail":
+        setThreadTail(msg.conversationUuid, msg.fromUuid, msg.toUuid);
         break;
       case "send-side-branch":
         void sendSideBranch(msg);
