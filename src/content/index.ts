@@ -199,17 +199,27 @@ function main(): void {
   subscribe(() => {
     installPageStyles(); // idempotent; survives site style purges
     const tree = ctx.getTree();
-    domMap.rebuild(tree ?? null);
-    // Always-on hygiene: a note side branch that is currently the active path
-    // (e.g. right after a reload mid-note) must never show in the chat.
-    if (tree) {
-      for (const row of domMap.rows) {
-        if (!row.uuid) continue;
-        const node = tree.nodes.get(row.uuid);
-        const shouldHide = !!node?.isNote;
-        if (row.el.classList.contains("pt-note-hidden") !== shouldHide) {
-          row.el.classList.toggle("pt-note-hidden", shouldHide);
-        }
+    domMap.rebuild(tree);
+    // Always-on hygiene: note pairs rendered by the app (after a reload) must
+    // never show in the chat. Two independent signals decide hiding:
+    //  1. the model — rows mapped to isNote nodes;
+    //  2. the DOM itself — a human row whose message body starts with the
+    //     note marker, plus the assistant row right after it (safety net for
+    //     any alignment failure).
+    const rows = domMap.rows;
+    const markerHidden = new Set<number>();
+    for (let i = 0; i < rows.length; i++) {
+      if (DomMap.isNoteRow(rows[i]!)) {
+        markerHidden.add(i);
+        if (rows[i + 1]?.sender === "assistant") markerHidden.add(i + 1);
+      }
+    }
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]!;
+      const shouldHide =
+        markerHidden.has(i) || (!!tree && !!row.uuid && !!tree.nodes.get(row.uuid)?.isNote);
+      if (row.el.classList.contains("pt-note-hidden") !== shouldHide) {
+        row.el.classList.toggle("pt-note-hidden", shouldHide);
       }
     }
   });

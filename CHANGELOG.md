@@ -2,6 +2,44 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.6.0 — 2026-07-11
+
+### Continue a note
+
+- Note/comment cards gain a **Continue** action: it reopens the margin
+  composer and the new question/answer is appended **inside the same card**
+  as a running thread (divider between pairs, streaming live, persisted like
+  the first pair — hidden in-thread messages). The fullscreen modal shows
+  the whole thread.
+
+### Fixes
+
+- **Draft-restore notice shows again.** 0.5.0 inserted it into the site's
+  React-owned alert band, which could drop it; it is now a fixed overlay
+  aligned to the band's own position — identical look, no interference.
+- **Note pairs no longer appear in chat after a reload.** Marker detection
+  now reads the message body element (rows can start with toolbar/screen-
+  reader text), plus a mapping-independent safety net hides any rendered
+  marker row and its reply.
+- **Panel clicks reach unloaded messages.** In long (virtualized) chats,
+  clicking an early entry now hops toward the estimated position and waits
+  for the message to mount, repeating until it can align and pulse it.
+
+### Prompt history panel
+
+- **Tracks the conversation**: the pair currently in view in the chat is
+  highlighted (quote-chip tint; accent dot in the minimized strip) and the
+  panel auto-centers on it — paused while you scroll the panel yourself,
+  resuming when the chat moves or you click an entry.
+- **Branch numbering**: a branched message's chip now shows just its own
+  branch number (e.g. `2`), and the list beneath shows only the OTHER
+  branches, each labeled with its real number.
+- The panel starts ~44px lower, leaving room for the chat title.
+
+### Styling
+
+- ✎ / + margin buttons use a symmetric (centered) shadow.
+
 ## 0.5.0 — 2026-07-10
 
 ### Notes & comments are now in-thread (no more branches)

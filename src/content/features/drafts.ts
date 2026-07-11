@@ -46,8 +46,7 @@ import {
   getComposerDock,
   getComposerEl,
   getComposerText,
-  placeFixedAboveComposer,
-  placeInAlertBand,
+  placeAboveComposer,
   setComposerText,
 } from "../composer";
 import type { Ctx, Feature } from "../ctx";
@@ -158,7 +157,7 @@ export class DraftsFeature implements Feature {
         if (this.enabled) this.saveMain();
       });
     }
-    // park the banner in the site's alert band (fixed fallback if missing)
+    // keep the banner overlaid on the site's alert-band area
     if (this.bannerHost) this.placeBanner();
   }
 
@@ -335,13 +334,11 @@ export class DraftsFeature implements Feature {
     this.placeBanner();
   }
 
-  /** Native alert-band placement, fixed-position fallback. */
+  /** Fixed overlay aligned to the site's alert-band area. */
   private placeBanner(): void {
     if (!this.bannerHost) return;
-    if (!placeInAlertBand(this.bannerHost)) {
-      if (!this.bannerHost.isConnected) document.body.appendChild(this.bannerHost);
-      placeFixedAboveComposer(this.bannerHost, Z_PANEL);
-    }
+    if (!this.bannerHost.isConnected) document.body.appendChild(this.bannerHost);
+    placeAboveComposer(this.bannerHost, Z_PANEL);
   }
 
   private removeBanner(): void {

@@ -71,11 +71,15 @@ extension card, then reload the claude.ai tab.
   plus a `▸ N more` caret; click one to switch in place (the extension drives
   the native `‹ ›` version arrows for you, stepping directly from any branch
   to any other). Clicking a prompt row highlights its whole bubble; a
-  response row highlights just the reply text.
+  response row highlights just the reply text. The panel follows the chat:
+  the pair in view is highlighted and kept centered (paused while you scroll
+  the panel yourself), and clicking an entry in a long chat loads and jumps
+  to the message even if it isn't rendered yet.
 - **Notes**: select text in an assistant reply → click the ✎ button in the
   right margin (next to, never over, the native selection popover) → type the
   question in the margin composer (⌘/Ctrl-Enter sends). The answer streams into
-  the card. ⤢ expands to a full markdown modal; 🗑 soft-deletes the note —
+  the card. **Continue** asks a follow-up in the same card (the thread grows
+  inside it); ⤢ expands to a full markdown modal; 🗑 soft-deletes the note —
   restore it any time from "Deleted notes" at the bottom of the Prompt
   history panel.
 - **Comments**: hover a reply with nothing selected → click the **+** in the

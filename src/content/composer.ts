@@ -41,36 +41,30 @@ export function getComposerDockRect(): DOMRect | null {
 }
 
 /**
- * Parks a bar host inside the site's own alert band above the composer (the
- * placement native notices use). Idempotent — call every tick; React wipes
- * are healed by re-appending. Returns false when the band is missing, in
- * which case the caller should fall back to fixed positioning.
+ * Positions a bar host as a fixed overlay exactly where the site's own
+ * alert band shows notices — WITHOUT inserting into that React-owned subtree
+ * (doing so proved unreliable: React reconciliation can drop foreign nodes).
+ * Prefers the band wrapper's rect (stacking above any native notice inside
+ * it); falls back to the composer dock rect. `liftPx` stacks multiple bars.
+ *
+ * The host is styled (fixed, layered, hidden) BEFORE any rect check, so a
+ * not-yet-mounted composer never leaves a visible unstyled element; callers
+ * re-invoke every observer tick, which also heals removals.
  */
-export function placeInAlertBand(host: HTMLElement): boolean {
-  const wrapper = q<HTMLElement>("alertBandWrapper");
-  if (!wrapper) return false;
-  if (host.parentElement !== wrapper) wrapper.appendChild(host);
-  if (host.style.position) host.style.cssText = "display:block;";
-  return true;
-}
-
-/**
- * Fixed-position fallback: pins a bar host just above the prompt box.
- * `zIndex` comes from the caller's layer; `liftPx` stacks bars.
- */
-export function placeFixedAboveComposer(host: HTMLElement, zIndex: number, liftPx = 0): void {
-  const dockRect = getComposerDockRect();
-  if (!dockRect) return;
+export function placeAboveComposer(host: HTMLElement, zIndex: number, liftPx = 0): void {
   const style = host.style;
   if (style.position !== "fixed") {
-    host.style.cssText = `position:fixed;z-index:${zIndex};display:block;`;
+    host.style.cssText = `position:fixed;z-index:${zIndex};display:block;visibility:hidden;`;
   }
-  const left = `${Math.round(dockRect.left)}px`;
-  const bottom = `${Math.round(window.innerHeight - dockRect.top + liftPx)}px`;
-  const width = `${Math.round(dockRect.width)}px`;
+  const rect = q<HTMLElement>("alertBandWrapper")?.getBoundingClientRect() ?? getComposerDockRect();
+  if (!rect || rect.width === 0) return; // stays hidden until measurable
+  const left = `${Math.round(rect.left)}px`;
+  const bottom = `${Math.round(window.innerHeight - rect.top + liftPx)}px`;
+  const width = `${Math.round(rect.width)}px`;
   if (style.left !== left) style.left = left;
   if (style.bottom !== bottom) style.bottom = bottom;
   if (style.width !== width) style.width = width;
+  if (style.visibility !== "visible") style.visibility = "visible";
 }
 
 /** Replaces the composer's content with `text`. Returns success. */

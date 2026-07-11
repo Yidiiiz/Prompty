@@ -27,11 +27,12 @@
 import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { summarizer } from "../../shared/summary";
 import { getPanelCollapsed, setPanelCollapsed } from "../../shared/storage";
-import { escapeHtml, rafThrottle } from "../../shared/util";
+import { escapeHtml, rafThrottle, waitUntil } from "../../shared/util";
 import type { TreeNode } from "../../shared/tree";
 import { subscribe } from "../observer";
 import { NativeArrowsAdapter, type BranchSwitchAdapter } from "../branch-switch";
 import type { Ctx, Feature } from "../ctx";
+import type { DomRow } from "../dom-map";
 
 const MIN_VIEWPORT_FOR_FULL = 1100;
 const FULL_WIDTH = 280;
@@ -120,6 +121,13 @@ const PANEL_CSS = `
     transition: background ${UI.transition}, color ${UI.transition};
   }
   .hdr:hover { background: ${cssVar("--bg-300", 0.55)}; color: ${cssVar("--text-100")}; }
+  /* the pair currently in view in the chat — quote-chip treatment */
+  .hdr.current, .prompt.current {
+    color: ${cssVar("--text-100")};
+    background: ${cssVar("--bg-300", 0.55)};
+    box-shadow: inset 2px 0 0 0 ${cssVar("--accent-main-100", 0.75)};
+    border-radius: 0 ${UI.radiusSm} ${UI.radiusSm} 0;
+  }
   .fork { flex: none; color: ${cssVar("--text-500")}; font-size: 12px; margin-top: 1px; }
   .txt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .count {
@@ -148,13 +156,6 @@ const PANEL_CSS = `
     font-size: 10px; font-variant-numeric: tabular-nums;
     color: ${cssVar("--text-500")};
   }
-  .opt.current {
-    opacity: 1; cursor: default;
-    color: ${cssVar("--text-100")};
-    background: ${cssVar("--bg-200", 0.85)};
-    border-left-color: ${cssVar("--accent-main-100", 0.8)};
-  }
-  .opt.current:hover { background: ${cssVar("--bg-200", 0.85)}; }
   .caret {
     display: flex; align-items: center; gap: 7px;
     padding: 2px 8px; margin-left: 2px;
@@ -237,6 +238,8 @@ const PANEL_CSS = `
   .mini .f { font-size: 11px; line-height: 1; color: ${cssVar("--text-400")}; }
   .mini:hover .d { background: ${cssVar("--text-200")}; transform: scale(1.25); }
   .mini:hover .f { color: ${cssVar("--text-100")}; }
+  .mini.current .d { background: ${cssVar("--accent-main-100")}; transform: scale(1.25); }
+  .mini.current .f { color: ${cssVar("--accent-main-200")}; }
 `;
 
 export class TreePanelFeature implements Feature {
@@ -254,6 +257,12 @@ export class TreePanelFeature implements Feature {
   private expandedBranches = new Set<string>();
   private drawerItems: Array<{ noteId: string; label: string }> = [];
   private deletedItems: Array<{ noteId: string; label: string }> = [];
+  /** Prompt uuid of the pair currently in view in the chat. */
+  private currentViewUuid: string | null = null;
+  /** True while the user has manually scrolled the panel list; auto-centering
+   *  pauses until the chat's current message changes again. */
+  private userScrolledPanel = false;
+  private panelScrollGuard = false;
   private lastSignature = "";
   /** Summary memo — summarize() runs regexes over full message text, so it
    *  must not run per node per tick. Keyed by uuid+len (streaming-safe). */
@@ -330,11 +339,15 @@ export class TreePanelFeature implements Feature {
         ? "strip"
         : "full";
 
-    // flush against the scroll area's left edge — embedded, not floating
-    const top = Math.round(scRect.top);
+    // flush against the scroll area's left edge — embedded, not floating —
+    // starting below the chat-title area (+44px headroom)
+    const top = Math.round(scRect.top) + 44;
     const left = `${Math.round(scRect.left)}px`;
     const topPx = `${top}px`;
     const height = `${Math.max(160, window.innerHeight - top)}px`;
+
+    // read phase: which pair is currently in view in the chat?
+    this.trackCurrentMessage(scRect);
 
     // write phase (guarded)
     this.setMode(panel, mode);
@@ -343,6 +356,34 @@ export class TreePanelFeature implements Feature {
     if (panel.style.top !== topPx) panel.style.top = topPx;
     if (panel.style.height !== height) panel.style.height = height;
     this.render(); // signature check makes this cheap when nothing changed
+  }
+
+  /** First visible mapped row decides the "current" pair (prompt uuid). */
+  private trackCurrentMessage(scRect: DOMRect): void {
+    const tree = this.ctx.getTree();
+    if (!tree) return;
+    let uuid: string | null = null;
+    for (const row of this.ctx.domMap.rows) {
+      if (!row.uuid || row.el.classList.contains("pt-note-hidden")) continue;
+      if (row.el.getBoundingClientRect().bottom > scRect.top + 100) {
+        uuid = row.uuid;
+        break;
+      }
+    }
+    if (uuid) {
+      // normalize responses to their pair's prompt (that's what panel rows key on)
+      const node = tree.nodes.get(uuid);
+      if (node?.sender === "assistant") {
+        const parent = tree.nodes.get(node.parentUuid);
+        if (parent && !parent.isNote) uuid = parent.uuid;
+      }
+    }
+    if (uuid !== this.currentViewUuid) {
+      this.currentViewUuid = uuid;
+      this.userScrolledPanel = false; // the chat moved: resume auto-centering
+      this.lastSignature = "";
+      this.render();
+    }
   }
 
   private setMode(panel: HTMLElement, mode: PanelMode): void {
@@ -419,6 +460,7 @@ export class TreePanelFeature implements Feature {
     const signature = JSON.stringify({
       m: this.mode,
       f: this.fullFits,
+      c: this.currentViewUuid,
       d: this.drawerItems,
       dd: this.deletedItems,
       x: [...this.expandedBranches],
@@ -469,6 +511,7 @@ export class TreePanelFeature implements Feature {
       html += `</div>`;
     }
 
+    const prevScrollTop = panel.querySelector<HTMLElement>(".list")?.scrollTop ?? 0;
     panel.innerHTML = html;
     panel.querySelectorAll<HTMLElement>("[data-act]").forEach((el) => {
       el.addEventListener("click", (ev) => {
@@ -476,6 +519,27 @@ export class TreePanelFeature implements Feature {
         this.handleAction(el.dataset["act"] ?? "", el.dataset["uuid"] ?? "", el.dataset["note"] ?? "");
       });
     });
+
+    // auto-center on the current message unless the user scrolled the panel
+    const list = panel.querySelector<HTMLElement>(".list");
+    if (list) {
+      list.addEventListener(
+        "scroll",
+        () => {
+          if (!this.panelScrollGuard) this.userScrolledPanel = true;
+        },
+        { passive: true }
+      );
+      this.panelScrollGuard = true;
+      if (!this.userScrolledPanel && this.currentViewUuid) {
+        const entry = list.querySelector<HTMLElement>(`[data-uuid="${this.currentViewUuid}"]`);
+        if (entry) list.scrollTop = entry.offsetTop - list.clientHeight / 2 + entry.offsetHeight / 2;
+      } else {
+        // rebuilding innerHTML reset the list; keep the user's position
+        list.scrollTop = prevScrollTop;
+      }
+      requestAnimationFrame(() => (this.panelScrollGuard = false));
+    }
   }
 
   /* --------------------------------------------------- full-mode markup */
@@ -516,21 +580,25 @@ export class TreePanelFeature implements Feature {
     return html;
   }
 
+  private currentClass(uuid: string): string {
+    return uuid === this.currentViewUuid ? " current" : "";
+  }
+
   private renderHeaderRow(node: TreeNode): string {
     const sibs = this.ctx.getTree()!.siblingsOf(node.uuid);
     const idx = sibs.findIndex((s) => s.uuid === node.uuid);
     return `
-      <button class="hdr" data-act="jump" data-uuid="${node.uuid}"
+      <button class="hdr${this.currentClass(node.uuid)}" data-act="jump" data-uuid="${node.uuid}"
               title="${escapeHtml(this.summarize(node.uuid, node.text, 12))}">
         <span class="fork">⑂</span>
         <span class="txt">${escapeHtml(this.summarize(node.uuid, node.text, 6))}</span>
-        <span class="count">${idx + 1}/${sibs.length}</span>
+        <span class="count" title="branch ${idx + 1} of ${sibs.length}">${idx + 1}</span>
       </button>`;
   }
 
   private renderPromptRow(node: TreeNode): string {
     return `
-      <button class="prompt" data-act="jump" data-uuid="${node.uuid}"
+      <button class="prompt${this.currentClass(node.uuid)}" data-act="jump" data-uuid="${node.uuid}"
               title="${escapeHtml(this.summarize(node.uuid, node.text, 12))}">
         <span class="b">·</span>
         <span class="txt">${escapeHtml(this.summarize(node.uuid, node.text, 6))}</span>
@@ -539,9 +607,10 @@ export class TreePanelFeature implements Feature {
 
   private renderResponseRow(node: TreeNode, underHeader: boolean): string {
     const sibs = this.ctx.getTree()!.siblingsOf(node.uuid);
+    const idx = sibs.findIndex((s) => s.uuid === node.uuid);
     const count =
       sibs.length > 1
-        ? `<span class="count">${sibs.findIndex((s) => s.uuid === node.uuid) + 1}/${sibs.length}</span>`
+        ? `<span class="count" title="branch ${idx + 1} of ${sibs.length}">${idx + 1}</span>`
         : "";
     return `
       <button class="resp${underHeader ? " hdr-resp" : ""}" data-act="jump" data-uuid="${node.uuid}"
@@ -552,18 +621,18 @@ export class TreePanelFeature implements Feature {
       </button>`;
   }
 
-  /** Numbered branch options: first two, the rest behind a caret. */
+  /** The OTHER branches only, labeled with their real numbers; the row above
+   *  (header/response) already represents the current branch. */
   private renderOptions(node: TreeNode): string {
     const sibs = this.ctx.getTree()!.siblingsOf(node.uuid);
+    const others = sibs.filter((s) => s.uuid !== node.uuid);
     const expanded = this.expandedBranches.has(node.uuid);
-    const shown = expanded ? sibs : sibs.slice(0, OPTIONS_SHOWN_COLLAPSED);
-    const hidden = sibs.length - shown.length;
+    const shown = expanded ? others : others.slice(0, OPTIONS_SHOWN_COLLAPSED);
+    const hidden = others.length - shown.length;
     let html = `<div class="opts">`;
     for (const sib of shown) {
-      const current = sib.uuid === node.uuid;
       html += `
-        <button class="opt${current ? " current" : ""}"
-                ${current ? "" : `data-act="switch" data-uuid="${sib.uuid}"`}
+        <button class="opt" data-act="switch" data-uuid="${sib.uuid}"
                 title="${escapeHtml(this.summarize(sib.uuid, sib.text, 12))}">
           <span class="num">${sibs.indexOf(sib) + 1}</span>
           <span class="txt">${escapeHtml(this.summarize(sib.uuid, sib.text, 4))}</span>
@@ -571,7 +640,7 @@ export class TreePanelFeature implements Feature {
     }
     if (hidden > 0) {
       html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▸ ${hidden} more</button>`;
-    } else if (expanded && sibs.length > OPTIONS_SHOWN_COLLAPSED) {
+    } else if (expanded && others.length > OPTIONS_SHOWN_COLLAPSED) {
       html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▾ show less</button>`;
     }
     html += `</div>`;
@@ -588,7 +657,8 @@ export class TreePanelFeature implements Feature {
         (pair.response ? this.branchCount(pair.response.uuid) > 1 : false);
       const label = this.summarize(pair.prompt.uuid, pair.prompt.text, 8);
       html += `
-        <button class="mini" data-act="jump" data-uuid="${pair.prompt.uuid}" title="${escapeHtml(label)}">
+        <button class="mini${this.currentClass(pair.prompt.uuid)}" data-act="jump"
+                data-uuid="${pair.prompt.uuid}" title="${escapeHtml(label)}">
           ${branched ? `<span class="f">⑂</span>` : `<span class="d"></span>`}
         </button>`;
     }
@@ -615,7 +685,7 @@ export class TreePanelFeature implements Feature {
         this.render();
         break;
       case "jump":
-        this.scrollToMessage(uuid);
+        void this.scrollToMessage(uuid);
         break;
       case "switch":
         if (tree) void this.adapter.switchToBranch(tree, uuid);
@@ -629,15 +699,40 @@ export class TreePanelFeature implements Feature {
     }
   }
 
-  private scrollToMessage(uuid: string): void {
-    const row = this.ctx.domMap.rowByUuid(uuid);
+  /**
+   * Long chats virtualize: the target row may not exist yet. Jump toward the
+   * estimated position (index ratio of the path) and wait for the row to
+   * mount, repeating until found — then align and pulse.
+   */
+  private async scrollToMessage(uuid: string): Promise<void> {
+    const tree = this.ctx.getTree();
     const sc = this.ctx.domMap.scrollContainer;
-    if (!row || !sc) return;
-    const rowRect = row.el.getBoundingClientRect();
-    const scRect = sc.getBoundingClientRect();
-    sc.scrollTo({ top: sc.scrollTop + (rowRect.top - scRect.top) - 24, behavior: "smooth" });
-    // Pulse the message box itself (full bubble for prompts, text block for
-    // responses) — never the control space beneath it.
+    if (!tree || !sc) return;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const row = this.ctx.domMap.rowByUuid(uuid);
+      if (row) {
+        const rowRect = row.el.getBoundingClientRect();
+        const scRect = sc.getBoundingClientRect();
+        sc.scrollTo({ top: sc.scrollTop + (rowRect.top - scRect.top) - 24, behavior: "smooth" });
+        this.pulse(row);
+        return;
+      }
+      const path = tree.visiblePath();
+      const idx = path.findIndex((n) => n.uuid === uuid);
+      if (idx < 0) return;
+      const ratio = path.length > 1 ? idx / (path.length - 1) : 0;
+      sc.scrollTop = ratio * (sc.scrollHeight - sc.clientHeight); // instant hop
+      // rows mount as the virtualizer catches up; re-map until the target shows
+      await waitUntil(() => {
+        this.ctx.domMap.rebuild(tree);
+        return !!this.ctx.domMap.rowByUuid(uuid);
+      }, 500);
+    }
+  }
+
+  /** Pulse the message box itself (full bubble for prompts, text block for
+   *  responses) — never the control space beneath it. */
+  private pulse(row: DomRow): void {
     const target = this.ctx.domMap.contentElOf(row);
     target.classList.remove("pt-highlight-pulse");
     requestAnimationFrame(() => {

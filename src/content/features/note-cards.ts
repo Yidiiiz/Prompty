@@ -59,27 +59,48 @@ function isolateInputEvents(host: HTMLElement): void {
 
 export type GutterAnchor = Omit<NoteRecord, "noteId" | "noteBranchRootUuid" | "createdAt">;
 
+/** One in-flight Q&A stream. Streams are keyed by a stream id: the record's
+ *  noteId for the first pair, `noteId#<n>` for "Continue" follow-ups. */
 interface LiveState {
+  /** The owning record's noteId. */
+  recordId: string;
+  /** Human uuid of this pair, known from note-send-started onward. */
+  rootUuid?: string;
   question: string;
   reply: string;
   status: "sending" | "streaming" | "done" | "failed";
   reason?: string;
 }
 
+type PairStatus = LiveState["status"] | "saved" | "missing";
+
+/** One rendered Q&A of a card's thread. */
+interface ThreadPair {
+  question: string;
+  reply: string;
+  status: PairStatus;
+}
+
 interface ResolvedCard {
   record: NoteRecord;
   y: number;
   anchorState: "ok" | "moved";
-  question: string;
-  reply: string;
-  status: LiveState["status"] | "saved" | "missing";
+  pairs: ThreadPair[];
 }
 
 interface ComposerState {
   kind: "note" | "comment";
   anchor: GutterAnchor;
   quoteDisplay: string | null;
+  /** Set when this composer continues an existing card's thread. */
+  followUpOf: NoteRecord | null;
   el: HTMLElement;
+}
+
+/** `noteId#3` → `noteId`; plain ids pass through. */
+function baseNoteId(streamId: string): string {
+  const hash = streamId.indexOf("#");
+  return hash < 0 ? streamId : streamId.slice(0, hash);
 }
 
 export class NoteCardManager {
@@ -102,20 +123,28 @@ export class NoteCardManager {
       if (msg.conversationUuid) void this.loadRecords(msg.conversationUuid);
     });
     ctx.bus.on("note-send-started", (msg) => {
-      const record = this.records.find((r) => r.noteId === msg.noteId);
+      const humanUuid = msg.turnMessageUuids.human_message_uuid;
+      const record = this.records.find((r) => r.noteId === baseNoteId(msg.noteId));
       if (record) {
-        record.noteBranchRootUuid = msg.turnMessageUuids.human_message_uuid;
+        if (msg.noteId === record.noteId) {
+          record.noteBranchRootUuid = humanUuid;
+        } else {
+          record.followUpRootUuids = [...(record.followUpRootUuids ?? []), humanUuid];
+        }
         void saveNote(record);
       }
       const live = this.live.get(msg.noteId);
-      if (live) live.status = "streaming";
+      if (live) {
+        live.status = "streaming";
+        live.rootUuid = humanUuid;
+      }
     });
     ctx.bus.on("note-stream-delta", (msg) => {
       const live = this.live.get(msg.noteId);
       if (live) {
         live.status = "streaming";
         live.reply += msg.text;
-        this.updateCardContent(msg.noteId);
+        this.updateCardContent(baseNoteId(msg.noteId));
       }
     });
     ctx.bus.on("note-stream-done", (msg) => {
@@ -123,7 +152,7 @@ export class NoteCardManager {
       if (live) {
         live.status = "done";
         live.reply = msg.text;
-        this.updateCardContent(msg.noteId);
+        this.updateCardContent(baseNoteId(msg.noteId));
       }
     });
     ctx.bus.on("note-send-failed", (msg) => {
@@ -131,7 +160,7 @@ export class NoteCardManager {
       if (live) {
         live.status = "failed";
         live.reason = msg.reason;
-        this.updateCardContent(msg.noteId);
+        this.updateCardContent(baseNoteId(msg.noteId));
       }
       toastOnce(`note-failed-${msg.noteId}`, `Prompt Tree: note failed — ${msg.reason}`);
     });
@@ -268,7 +297,13 @@ export class NoteCardManager {
 
   /* ------------------------------------------------------------ composer */
 
-  openComposer(kind: "note" | "comment", anchor: GutterAnchor, quoteDisplay: string | null, initialText = ""): void {
+  openComposer(
+    kind: "note" | "comment",
+    anchor: GutterAnchor,
+    quoteDisplay: string | null,
+    initialText = "",
+    followUpOf: NoteRecord | null = null
+  ): void {
     if (!this.kinds[kind]) return;
     const layer = this.ensureGutter();
     if (!layer) {
@@ -312,13 +347,14 @@ export class NoteCardManager {
       // seamless — the card mounts in the same frame the composer closes
       const topPx = this.composer?.el.style.top ?? "";
       this.closeComposer();
-      this.submitNote(kind, anchor, text, topPx);
+      if (followUpOf) this.submitFollowUp(followUpOf, text);
+      else this.submitNote(kind, anchor, text, topPx);
     };
     el.querySelector<HTMLButtonElement>("button.primary")!.addEventListener("click", submit);
     el.querySelector<HTMLButtonElement>("button.ghost")!.addEventListener("click", () => this.closeComposer());
     // Position at the anchor BEFORE inserting and focus without scrolling —
     // focusing an unpositioned (top: 0) element would yank the page to the top.
-    this.composer = { kind, anchor, quoteDisplay, el };
+    this.composer = { kind, anchor, quoteDisplay, followUpOf, el };
     const y = this.resolveComposerY();
     if (y !== null) el.style.top = `${Math.max(0, Math.round(y))}px`;
     layer.appendChild(el);
@@ -337,6 +373,20 @@ export class NoteCardManager {
 
   /* -------------------------------------------------------------- submit */
 
+  private buildMeta(kind: "note" | "comment", anchor: GutterAnchor, tree: ConversationTree): NoteMeta {
+    return kind === "note"
+      ? {
+          anchorUuid: anchor.anchorMessageUuid,
+          quote: anchor.quote ?? "",
+          charOffset: anchor.charOffset ?? 0,
+        }
+      : {
+          anchorUuid: anchor.anchorMessageUuid,
+          kind: "comment",
+          context: this.commentContext(tree, anchor),
+        };
+  }
+
   submitNote(
     kind: "note" | "comment",
     anchor: GutterAnchor,
@@ -346,18 +396,7 @@ export class NoteCardManager {
     const conversationUuid = this.ctx.getCurrentConversation();
     const tree = this.ctx.getTree();
     if (!conversationUuid || !tree) return;
-    const meta: NoteMeta =
-      kind === "note"
-        ? {
-            anchorUuid: anchor.anchorMessageUuid,
-            quote: anchor.quote ?? "",
-            charOffset: anchor.charOffset ?? 0,
-          }
-        : {
-            anchorUuid: anchor.anchorMessageUuid,
-            kind: "comment",
-            context: this.commentContext(tree, anchor),
-          };
+    const meta = this.buildMeta(kind, anchor, tree);
     const noteId = uuidv7();
     const record: NoteRecord = {
       noteId,
@@ -374,7 +413,7 @@ export class NoteCardManager {
       createdAt: Date.now(),
     };
     this.records.push(record);
-    this.live.set(noteId, { question, reply: "", status: "sending" });
+    this.live.set(noteId, { recordId: noteId, question, reply: "", status: "sending" });
     // Mount the pending card immediately at the composer's position so the
     // send reads as the composer transforming into the card, not vanishing.
     const layer = this.ensureGutter();
@@ -385,9 +424,7 @@ export class NoteCardManager {
         record,
         y: 0,
         anchorState: "ok",
-        question,
-        reply: "",
-        status: "sending",
+        pairs: [{ question, reply: "", status: "sending" }],
       });
       layer.appendChild(el);
       this.cardEls.set(noteId, el);
@@ -405,6 +442,32 @@ export class NoteCardManager {
       parentMessageUuid,
       prompt: buildNotePrompt(meta, question),
     });
+  }
+
+  /** "Continue": sends another hidden pair appended to an existing card. */
+  submitFollowUp(record: NoteRecord, question: string): void {
+    const conversationUuid = this.ctx.getCurrentConversation();
+    const tree = this.ctx.getTree();
+    if (!conversationUuid || !tree) return;
+    const anchor = record as GutterAnchor & NoteRecord;
+    const meta = this.buildMeta(record.kind, anchor, tree);
+    // stream id ties the events back to this record without a second record
+    const streamId = `${record.noteId}#${uuidv7().slice(0, 8)}`;
+    this.live.set(streamId, { recordId: record.noteId, question, reply: "", status: "sending" });
+    this.updateCardContent(record.noteId);
+    requestTick();
+    this.ctx.sendToPage({
+      type: "send-side-branch",
+      noteId: streamId,
+      conversationUuid,
+      parentMessageUuid: tree.activeLeafUuid ?? record.anchorMessageUuid,
+      prompt: buildNotePrompt(meta, question),
+    });
+  }
+
+  /** Opens the composer to continue an existing card's thread. */
+  private openFollowUpComposer(record: NoteRecord): void {
+    this.openComposer(record.kind, record as GutterAnchor & NoteRecord, record.quote ?? null, "", record);
   }
 
   /** Surrounding ~200 chars of the anchor message's text, in place of a quote. */
@@ -452,7 +515,7 @@ export class NoteCardManager {
   openModal(noteId: string): void {
     const record = this.records.find((r) => r.noteId === noteId);
     if (!record) return;
-    const content = this.resolveContent(record);
+    const pairs = this.resolveThread(record);
     this.modalHost?.remove();
     const host = document.createElement("div");
     host.id = "pt-note-modal";
@@ -469,12 +532,16 @@ export class NoteCardManager {
           <button class="close" type="button" aria-label="Close">✕</button>
         </div>
         ${record.quote ? `<blockquote class="quote"></blockquote>` : ""}
-        <div class="question"></div>
-        <div class="answer md"></div>
+        ${pairs.map(() => `<div class="mpair"><div class="question"></div><div class="answer md"></div></div>`).join("")}
       </div>`;
     if (record.quote) overlay.querySelector(".quote")!.textContent = record.quote;
-    overlay.querySelector(".question")!.textContent = content.question;
-    overlay.querySelector(".answer")!.innerHTML = renderMarkdown(content.reply || "(no reply)");
+    const pairEls = overlay.querySelectorAll<HTMLElement>(".mpair");
+    pairs.forEach((pair, i) => {
+      pairEls[i]!.querySelector<HTMLElement>(".question")!.textContent = pair.question;
+      pairEls[i]!.querySelector<HTMLElement>(".answer")!.innerHTML = renderMarkdown(
+        pair.reply || "(no reply)"
+      );
+    });
     overlay.addEventListener("click", (ev) => {
       if (ev.target === overlay) host.remove();
     });
@@ -493,26 +560,48 @@ export class NoteCardManager {
 
   /* ----------------------------------------------------- content lookup */
 
-  /** Question/reply for a record: live stream first, else Claude's tree. */
-  private resolveContent(record: NoteRecord): { question: string; reply: string; status: ResolvedCard["status"] } {
-    const live = this.live.get(record.noteId);
+  /** One Q&A pair from its human uuid, with an optional live overlay. */
+  private resolvePair(rootUuid: string | undefined, live: LiveState | undefined): ThreadPair {
     if (live && live.status !== "done") {
       return { question: live.question, reply: live.reply, status: live.status };
     }
     const tree = this.ctx.getTree();
-    const root = record.noteBranchRootUuid ? tree?.nodes.get(record.noteBranchRootUuid) : undefined;
+    const root = rootUuid ? tree?.nodes.get(rootUuid) : undefined;
     if (root) {
       const parsed = parseNotePrompt(root.text);
-      const question = parsed?.question ?? live?.question ?? "(question unavailable)";
       const children = root.children
         .map((u) => tree!.nodes.get(u))
         .filter((n): n is NonNullable<typeof n> => !!n)
         .sort((a, b) => b.index - a.index);
-      const reply = children[0]?.text ?? live?.reply ?? "";
-      return { question, reply, status: live?.status ?? "saved" };
+      return {
+        question: parsed?.question ?? live?.question ?? "(question unavailable)",
+        reply: children[0]?.text ?? live?.reply ?? "",
+        status: live?.status ?? "saved",
+      };
     }
     if (live) return { question: live.question, reply: live.reply, status: live.status };
     return { question: "(note content unavailable)", reply: "", status: "missing" };
+  }
+
+  /** A card's full thread: the first pair, saved follow-ups, then any
+   *  just-submitted follow-up whose uuid isn't known yet. */
+  private resolveThread(record: NoteRecord): ThreadPair[] {
+    const pairs: ThreadPair[] = [
+      this.resolvePair(record.noteBranchRootUuid || undefined, this.live.get(record.noteId)),
+    ];
+    const followUpLives = [...this.live.entries()].filter(
+      ([id, l]) => l.recordId === record.noteId && id !== record.noteId
+    );
+    const liveByRoot = new Map(
+      followUpLives.filter(([, l]) => l.rootUuid).map(([, l]) => [l.rootUuid!, l])
+    );
+    for (const uuid of record.followUpRootUuids ?? []) {
+      pairs.push(this.resolvePair(uuid, liveByRoot.get(uuid)));
+    }
+    for (const [, l] of followUpLives) {
+      if (!l.rootUuid) pairs.push({ question: l.question, reply: l.reply, status: l.status });
+    }
+    return pairs;
   }
 
   /* -------------------------------------------------------- tick / layout */
@@ -585,8 +674,7 @@ export class NoteCardManager {
           ? this.toGutterY(rect.top)
           : this.toGutterY(rowRect.top) + rowRect.height * (record.offsetRatio ?? 0);
       }
-      const content = this.resolveContent(record);
-      resolved.push({ record, y: Math.max(0, y), anchorState, ...content });
+      resolved.push({ record, y: Math.max(0, y), anchorState, pairs: this.resolveThread(record) });
     }
 
     /* write phase: cards */
@@ -688,10 +776,10 @@ export class NoteCardManager {
     el.innerHTML = `
       <div class="quote"></div>
       <div class="moved">anchor moved</div>
-      <div class="q"></div>
-      <div class="a"></div>
+      <div class="thread"></div>
       <div class="foot">
         <span class="status"></span>
+        <button class="cont" type="button" title="Ask a follow-up in this note">Continue</button>
         <button class="icon expand" type="button" title="Expand">⤢</button>
         <button class="icon delete" type="button" title="Delete note">🗑</button>
       </div>`;
@@ -700,6 +788,9 @@ export class NoteCardManager {
       : record.kind === "comment"
         ? "Comment"
         : "Note";
+    el.querySelector<HTMLButtonElement>(".cont")!.addEventListener("click", () =>
+      this.openFollowUpComposer(record)
+    );
     el.querySelector<HTMLButtonElement>(".expand")!.addEventListener("click", () =>
       this.openModal(record.noteId)
     );
@@ -713,44 +804,51 @@ export class NoteCardManager {
     const movedEl = el.querySelector<HTMLElement>(".moved")!;
     const wantMoved = card.anchorState === "moved" ? "block" : "none";
     if (movedEl.style.display !== wantMoved) movedEl.style.display = wantMoved;
-    const qEl = el.querySelector<HTMLElement>(".q")!;
-    if (qEl.textContent !== card.question) qEl.textContent = card.question;
-    this.renderReply(el, card.reply, card.status);
+    this.renderThread(el, card.pairs);
   }
 
   private updateCardContent(noteId: string): void {
     const el = this.cardEls.get(noteId);
     const record = this.records.find((r) => r.noteId === noteId);
     if (!el || !record) return;
-    const content = this.resolveContent(record);
-    const qEl = el.querySelector<HTMLElement>(".q")!;
-    if (qEl.textContent !== content.question) qEl.textContent = content.question;
-    this.renderReply(el, content.reply, content.status);
+    this.renderThread(el, this.resolveThread(record));
   }
 
-  private renderReply(el: HTMLElement, reply: string, status: ResolvedCard["status"]): void {
-    const aEl = el.querySelector<HTMLElement>(".a")!;
+  private renderThread(el: HTMLElement, pairs: ThreadPair[]): void {
+    const last = pairs[pairs.length - 1]!;
+    const busy = last.status === "sending" || last.status === "streaming";
     const statusEl = el.querySelector<HTMLElement>(".status")!;
-    const busy = status === "sending" || status === "streaming";
     const statusText =
-      status === "sending"
+      last.status === "sending"
         ? "sending"
-        : status === "streaming"
+        : last.status === "streaming"
           ? "thinking"
-          : status === "failed"
+          : last.status === "failed"
             ? "failed"
-            : status === "missing"
+            : last.status === "missing"
               ? "content unavailable"
               : "";
     if (statusEl.textContent !== statusText) statusEl.textContent = statusText;
     if (statusEl.classList.contains("busy") !== busy) statusEl.classList.toggle("busy", busy);
-    const mode = status === "streaming" || status === "sending" ? "text" : "md";
-    if (el.getAttribute("data-mode") !== mode || el.getAttribute("data-len") !== String(reply.length)) {
-      el.setAttribute("data-mode", mode);
-      el.setAttribute("data-len", String(reply.length));
-      if (mode === "text") aEl.textContent = reply;
-      else aEl.innerHTML = renderMarkdown(reply);
+    const contBtn = el.querySelector<HTMLElement>(".cont");
+    if (contBtn) {
+      const display = busy || last.status === "missing" ? "none" : "";
+      if (contBtn.style.display !== display) contBtn.style.display = display;
     }
+
+    const sig = pairs.map((p) => `${p.status}:${p.question.length}:${p.reply.length}`).join("|");
+    if (el.getAttribute("data-sig") === sig) return;
+    el.setAttribute("data-sig", sig);
+    const threadEl = el.querySelector<HTMLElement>(".thread")!;
+    threadEl.innerHTML = pairs.map(() => `<div class="pair"><div class="q"></div><div class="a"></div></div>`).join("");
+    const pairEls = threadEl.querySelectorAll<HTMLElement>(".pair");
+    pairs.forEach((pair, i) => {
+      const pairEl = pairEls[i]!;
+      pairEl.querySelector<HTMLElement>(".q")!.textContent = pair.question;
+      const answerEl = pairEl.querySelector<HTMLElement>(".a")!;
+      if (pair.status === "sending" || pair.status === "streaming") answerEl.textContent = pair.reply;
+      else answerEl.innerHTML = renderMarkdown(pair.reply);
+    });
   }
 
   /* --------------------------------------------------- unanchored drawer */
@@ -758,7 +856,7 @@ export class NoteCardManager {
   private emitUnanchoredList(unanchored: NoteRecord[]): void {
     const conversationUuid = this.ctx.getCurrentConversation();
     if (!conversationUuid) return;
-    const label = (r: NoteRecord) => summarizer.summarize(this.resolveContent(r).question, 6);
+    const label = (r: NoteRecord) => summarizer.summarize(this.resolveThread(r)[0]!.question, 6);
     const items = unanchored.map((r) => ({ noteId: r.noteId, label: label(r) }));
     const deletedItems = this.records
       .filter((r) => r.deleted && this.kinds[r.kind])
@@ -818,8 +916,13 @@ const CARD_BASE_CSS = `
     color: ${cssVar("--danger-100")};
     margin-bottom: 5px;
   }
+  .card .thread { max-height: 260px; overflow-y: auto; scrollbar-width: thin; }
+  .card .pair + .pair {
+    margin-top: 8px; padding-top: 8px;
+    box-shadow: 0 -1px 0 0 ${cssVar("--border-300", 0.6)};
+  }
   .card .q { font-weight: 600; color: ${cssVar("--text-100")}; margin-bottom: 5px; white-space: pre-wrap; }
-  .card .a { white-space: normal; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; scrollbar-width: thin; }
+  .card .a { white-space: normal; overflow-wrap: anywhere; }
   .card .a p { margin: 0 0 6px 0; }
   .card .a p:last-child { margin-bottom: 0; }
   .card .a pre { background: ${cssVar("--bg-200")}; border-radius: ${UI.radiusSm}; padding: 7px 8px; overflow-x: auto; }
@@ -836,6 +939,13 @@ const CARD_BASE_CSS = `
     0% { clip-path: inset(0 100% 0 0); }
     100% { clip-path: inset(0 -0.2em 0 0); }
   }
+  .card .cont {
+    border: none; background: none; cursor: pointer; padding: 3px 5px;
+    color: ${cssVar("--accent-main-200")}; font-size: 11px; line-height: 1;
+    border-radius: ${UI.radiusSm}; font-family: inherit; font-weight: 500;
+    transition: color ${UI.transition};
+  }
+  .card .cont:hover { color: ${cssVar("--accent-main-100")}; text-decoration: underline; }
   .card .icon {
     border: none; background: none; cursor: pointer; padding: 3px 5px;
     color: ${cssVar("--text-400")}; font-size: 12px; line-height: 1;
@@ -887,7 +997,8 @@ const GUTTER_CSS = `
     color: ${cssVar("--text-300")};
     background: ${cssVar("--bg-000")};
     border: none;
-    box-shadow: ${UI.shadowSm};
+    /* symmetric shadow — a round button with an offset shadow reads off-center */
+    box-shadow: 0 0 0 0.5px ${cssVar("--border-300", 0.3)}, 0 0 6px ${cssVar("--always-black", 0.1)};
     z-index: 5;
     transition: background ${UI.transition}, color ${UI.transition}, transform ${UI.transition}, box-shadow ${UI.transition};
   }
@@ -896,8 +1007,7 @@ const GUTTER_CSS = `
   .entry:hover {
     background: ${cssVar("--bg-200")};
     color: ${cssVar("--text-100")};
-    transform: translateY(-1px);
-    box-shadow: ${UI.shadowMd};
+    box-shadow: 0 0 0 0.5px ${cssVar("--border-200", 0.4)}, 0 0 10px ${cssVar("--always-black", 0.14)};
   }
   .entry:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.6)}; outline-offset: 1px; }
   .conn {
@@ -955,6 +1065,10 @@ const MODAL_CSS = `
     background: ${cssVar("--bg-100")};
     color: ${cssVar("--text-300")}; font-size: 13px;
     border-radius: 0 ${UI.radiusSm} ${UI.radiusSm} 0;
+  }
+  .mpair + .mpair {
+    margin-top: 14px; padding-top: 14px;
+    box-shadow: 0 -1px 0 0 ${cssVar("--border-300", 0.6)};
   }
   .question { font-weight: 600; margin-bottom: 12px; white-space: pre-wrap; }
   .answer p { margin: 0 0 10px 0; }

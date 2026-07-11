@@ -51,6 +51,17 @@ export class DomMap {
   }
 
   /**
+   * True when a human row renders a note prompt. Reads the MESSAGE BODY
+   * element, not the whole row — rows can start with toolbar/screen-reader
+   * text that would defeat a prefix check on row.el.textContent.
+   */
+  static isNoteRow(row: DomRow): boolean {
+    if (row.sender !== "human") return false;
+    const body = row.el.querySelector<HTMLElement>(sel("userMessage"));
+    return !!body && isNoteText((body.textContent ?? "").trimStart());
+  }
+
+  /**
    * The message BOX of a row — the element highlight effects should cover.
    * Prompts: the full bubble (the padded parent of the user-message text).
    * Responses: the deepest wrapper holding the reply text but NOT the hover
@@ -148,8 +159,7 @@ export class DomMap {
       let noteIdx = 0;
       for (let i = 0; i < domRows.length; i++) {
         const row = domRows[i]!;
-        if (row.sender !== "human") continue;
-        if (!isNoteText((row.el.textContent ?? "").trimStart())) continue;
+        if (!DomMap.isNoteRow(row)) continue;
         const node = noteHumans[noteIdx++];
         if (!node) break;
         row.uuid = node.uuid;

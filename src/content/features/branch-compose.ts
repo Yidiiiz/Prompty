@@ -23,7 +23,7 @@ import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { summarizer } from "../../shared/summary";
 import { q } from "../../shared/selectors";
 import { toastOnce } from "../toast";
-import { getComposerDockRect, placeFixedAboveComposer, placeInAlertBand } from "../composer";
+import { getComposerDockRect, placeAboveComposer } from "../composer";
 import { subscribe } from "../observer";
 import type { Ctx, Feature } from "../ctx";
 
@@ -194,13 +194,14 @@ export class BranchComposeFeature implements Feature {
     this.headerHost = null;
   }
 
-  /** Native alert-band placement, fixed-position fallback. */
+  /** Fixed overlay aligned to the site's alert-band area, stacked above the
+   *  draft banner when both are showing. */
   private placeHeader(): void {
     if (!this.headerHost) return;
-    if (!placeInAlertBand(this.headerHost)) {
-      if (!this.headerHost.isConnected) document.body.appendChild(this.headerHost);
-      placeFixedAboveComposer(this.headerHost, Z_PANEL);
-    }
+    if (!this.headerHost.isConnected) document.body.appendChild(this.headerHost);
+    const banner = document.getElementById("pt-draft-banner");
+    const lift = banner ? banner.offsetHeight + 6 : 0;
+    placeAboveComposer(this.headerHost, Z_PANEL, lift);
   }
 
   private ensureHeader(mode: ModeState): void {

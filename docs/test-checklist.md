@@ -66,6 +66,16 @@ touched plus "Cross-cutting".
 - ☐ Clicking a prompt row smooth-scrolls to it and pulses (~0.6s) the **whole
   prompt bubble**; clicking a response row pulses **only the reply text
   block**, never the control space beneath it.
+- ☐ **Virtualized jump**: in a chat long enough that early messages unload,
+  clicking an early panel entry hops upward until the message mounts, then
+  aligns and pulses it.
+- ☐ **Tracking**: scrolling the chat highlights the in-view pair in the panel
+  (chip tint; accent dot in the strip) and keeps it centered; manually
+  scrolling the panel pauses centering until the chat moves or an entry is
+  clicked.
+- ☐ **Numbering**: on branch 2 of 3, the chip reads `2` and the list beneath
+  shows only branches `1` and `3` (their real numbers).
+- ☐ The panel top leaves the chat title visible (~44px headroom).
 - ☐ **Clicking a branch option switches WITHOUT a page reload**: the chat
   re-renders in place (native arrows are driven for you) and the panel
   follows. **Direct jump 1 → 3** works (steps through 2 transiently).
@@ -105,6 +115,11 @@ touched plus "Cross-cutting".
   uuid, rewritten by the extension); a second note chains under the first.
 - ☐ The card shows quote (muted), question, response; ⤢ opens the fullscreen
   modal with markdown rendering; Esc/✕/backdrop closes it.
+- ☐ **Continue**: the card's Continue action reopens the margin composer;
+  submitting appends the new Q&A inside the same card (divider between
+  pairs) and streams live; the modal shows the whole thread; reload → the
+  full thread re-renders; the next normal prompt still continues the
+  conversation (parent = the newest follow-up reply).
 - ☐ **Multiple notes on one message** work; **two notes near the same line
   stack with push-down** and connector lines point at their anchor lines.
 - ☐ Cards scroll with the chat (they live in the message scroll area) and

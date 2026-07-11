@@ -17,8 +17,10 @@ export interface NoteRecord {
   kind: "note" | "comment";
   conversationUuid: string;
   anchorMessageUuid: string;
-  /** Root (human) message uuid of the note's side branch in Claude's tree. */
+  /** Human message uuid of the note's first hidden pair in the tree. */
   noteBranchRootUuid: string;
+  /** Human uuids of follow-up pairs ("Continue" thread), in order. */
+  followUpRootUuids?: string[];
   /* --- note (highlight) anchoring --- */
   quote?: string;
   prefix?: string;
