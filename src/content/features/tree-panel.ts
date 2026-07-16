@@ -50,6 +50,34 @@ const SCROLL_KEYS = new Set([
   " ",
 ]);
 
+/**
+ * Document-layout Y of the element's top border edge — the classic
+ * cumulative offsetTop walk up the offsetParent chain. This reads pure
+ * LAYOUT geometry: unlike client rects it is unaffected by CSS transforms
+ * (message entrance animations), page zoom, or any in-flight scrolling,
+ * so it never has to be mixed with a scrollTop reading to become a scroll
+ * position.
+ */
+function layoutDocTop(el: HTMLElement): number {
+  let top = 0;
+  let node: HTMLElement | null = el;
+  while (node) {
+    top += node.offsetTop;
+    node = node.offsetParent instanceof HTMLElement ? node.offsetParent : null;
+  }
+  return top;
+}
+
+/**
+ * The element's position inside the container's scrollable content — i.e.
+ * the scrollTop at which the element's top aligns with the container's top.
+ * Both sides are summed to document coordinates so the result is exact even
+ * when the container is not in the element's own offsetParent chain.
+ */
+function layoutTopWithin(el: HTMLElement, sc: HTMLElement): number {
+  return layoutDocTop(el) - layoutDocTop(sc);
+}
+
 type PanelMode = "full" | "strip" | "hidden";
 
 /** A prompt and (when already answered) its response. */
@@ -363,7 +391,7 @@ export class TreePanelFeature implements Feature {
     const height = `${Math.max(160, window.innerHeight - top)}px`;
 
     // read phase: which pair is currently in view in the chat?
-    this.trackCurrentMessage(scRect);
+    this.trackCurrentMessage(sc);
 
     // write phase (guarded)
     this.setMode(panel, mode);
@@ -375,15 +403,16 @@ export class TreePanelFeature implements Feature {
   }
 
   /**
-   * The "current" pair is decided entirely from LIVE row rects — never from
-   * scrollTop/scrollHeight, which virtualization spacers make unreliable
-   * (they made the bottom message register as a higher one). If the
-   * conversation's true last message is fully on screen, it is current (the
-   * user is caught up at the end); symmetrically for the first message;
-   * otherwise it's the last row starting above the viewport center
-   * (monotonic in scroll position, so it never flickers between neighbors).
+   * The "current" pair is decided from each row's LIVE layout position
+   * (cumulative offsetTop within the scroll container) — never from client
+   * rects, which CSS transforms distort, and never from scrollHeight, which
+   * virtualization spacers inflate. If the conversation's true last message
+   * is fully inside the viewport, it is current (the user is caught up at
+   * the end); symmetrically for the first message; otherwise it's the last
+   * row starting above the viewport center (monotonic in scroll position,
+   * so it never flickers between neighbors).
    */
-  private trackCurrentMessage(scRect: DOMRect): void {
+  private trackCurrentMessage(sc: HTMLElement): void {
     const tree = this.ctx.getTree();
     if (!tree) return;
     const rows = this.ctx.domMap.rows.filter(
@@ -396,23 +425,25 @@ export class TreePanelFeature implements Feature {
     const path = tree.visiblePath();
     const firstRow = rows[0]!;
     const lastRow = rows[rows.length - 1]!;
+    const viewTop = sc.scrollTop;
+    const viewBottom = viewTop + sc.clientHeight;
 
     let uuid: string | null;
     if (
       lastRow.uuid === path[path.length - 1]?.uuid &&
-      lastRow.el.getBoundingClientRect().bottom <= scRect.bottom + 8
+      layoutTopWithin(lastRow.el, sc) + lastRow.el.offsetHeight <= viewBottom + 8
     ) {
       uuid = lastRow.uuid;
     } else if (
       firstRow.uuid === path[0]?.uuid &&
-      firstRow.el.getBoundingClientRect().top >= scRect.top - 8
+      layoutTopWithin(firstRow.el, sc) >= viewTop - 8
     ) {
       uuid = firstRow.uuid;
     } else {
-      const centerY = scRect.top + scRect.height / 2;
+      const centerY = viewTop + sc.clientHeight / 2;
       let best: string | null = firstRow.uuid;
       for (const row of rows) {
-        if (row.el.getBoundingClientRect().top > centerY) break;
+        if (layoutTopWithin(row.el, sc) > centerY) break;
         best = row.uuid;
       }
       uuid = best;
@@ -749,12 +780,14 @@ export class TreePanelFeature implements Feature {
 
   /**
    * One frame-driven glide to the message. Every frame the DOM map is
-   * rebuilt and the target's position re-read from its LIVE rect — no
-   * estimates, no stale offsets. While the target row isn't mounted yet
-   * (long chats virtualize), the glide heads toward the end of the chat it
-   * lies on; per-frame steps are capped below a viewport height so every
-   * region actually passes through the viewport and gets a chance to mount,
-   * and the moment the target appears the same motion redirects onto it.
+   * rebuilt and the target's scroll position re-derived from its LIVE
+   * layout offset within the scroll container (cumulative offsetTop — see
+   * layoutTopWithin) — no estimates, no client rects, no coordinate-space
+   * mixing. While the target row isn't mounted yet (long chats virtualize),
+   * the glide heads toward the end of the chat it lies on; per-frame steps
+   * are capped below a viewport height so every region actually passes
+   * through the viewport and gets a chance to mount, and the moment the
+   * target appears the same motion redirects onto it.
    *
    * The glide NEVER fights the user: any genuine scroll input (wheel,
    * touch, scroll keys, pressing the mouse to grab the scrollbar) or a
@@ -803,8 +836,7 @@ export class TreePanelFeature implements Feature {
         const maxTop = sc.scrollHeight - sc.clientHeight;
         let desired: number;
         if (row) {
-          const delta = row.el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
-          desired = clamp(sc.scrollTop + delta - 24, 0, maxTop);
+          desired = clamp(layoutTopWithin(row.el, sc) - 24, 0, maxTop);
           if (Math.abs(desired - sc.scrollTop) < 2) {
             sc.scrollTop = desired;
             this.pulse(row);

@@ -2,6 +2,23 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.8.2 — 2026-07-16
+
+### Prompt history panel
+
+- **Message positions now come from layout, not client rects**: 0.8.1's
+  glide computed its target as `scrollTop + rect delta`, mixing visual
+  coordinates (client rects, which CSS transforms such as message entrance
+  animations distort) with scroll coordinates — so jumps landed at the
+  wrong position. The target is now the message's true layout offset inside
+  the scroll container, read live each frame via the classic cumulative
+  `offsetTop` walk up the `offsetParent` chain: pure scroll-content
+  coordinates, immune to transforms, zoom, and in-flight scrolling.
+- **Current-message tracking uses the same layout offsets**: bottom/top
+  pinning and the center rule compare each row's layout position against
+  `scrollTop`/`clientHeight` directly, in one coordinate space, instead of
+  comparing client rects.
+
 ## 0.8.1 — 2026-07-16
 
 ### Prompt history panel
