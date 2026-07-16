@@ -114,6 +114,8 @@ export class NoteCardManager {
   private entryButtons = new Map<string, HTMLElement>();
   private composer: ComposerState | null = null;
   private modalHost: HTMLElement | null = null;
+  /** Cards whose continuation thread is expanded beyond the first pairs. */
+  private expandedThreads = new Set<string>();
   private lastUnanchoredSig = "";
 
   constructor(private ctx: Ctx) {
@@ -198,6 +200,7 @@ export class NoteCardManager {
     this.layer = null;
     this.modalHost?.remove();
     this.modalHost = null;
+    this.expandedThreads.clear();
     this.lastUnanchoredSig = "";
   }
 
@@ -451,6 +454,10 @@ export class NoteCardManager {
     if (!conversationUuid || !tree) return;
     const anchor = record as GutterAnchor & NoteRecord;
     const meta = this.buildMeta(record.kind, anchor, tree);
+    // mark the send as a continuation of this specific note
+    meta.continues = record.noteBranchRootUuid || record.noteId;
+    // the user is actively continuing: keep the thread open (with Hide shown)
+    this.expandedThreads.add(record.noteId);
     // stream id ties the events back to this record without a second record
     const streamId = `${record.noteId}#${uuidv7().slice(0, 8)}`;
     this.live.set(streamId, { recordId: record.noteId, question, reply: "", status: "sending" });
@@ -804,17 +811,21 @@ export class NoteCardManager {
     const movedEl = el.querySelector<HTMLElement>(".moved")!;
     const wantMoved = card.anchorState === "moved" ? "block" : "none";
     if (movedEl.style.display !== wantMoved) movedEl.style.display = wantMoved;
-    this.renderThread(el, card.pairs);
+    this.renderThread(el, card.record, card.pairs);
   }
 
   private updateCardContent(noteId: string): void {
     const el = this.cardEls.get(noteId);
     const record = this.records.find((r) => r.noteId === noteId);
     if (!el || !record) return;
-    this.renderThread(el, this.resolveThread(record));
+    this.renderThread(el, record, this.resolveThread(record));
   }
 
-  private renderThread(el: HTMLElement, pairs: ThreadPair[]): void {
+  /** Root pair + up to two continuations; more collapse behind a toggle
+   *  (auto-expanded while a continuation is actively streaming). */
+  private static readonly THREAD_SHOWN_COLLAPSED = 3;
+
+  private renderThread(el: HTMLElement, record: NoteRecord, pairs: ThreadPair[]): void {
     const last = pairs[pairs.length - 1]!;
     const busy = last.status === "sending" || last.status === "streaming";
     const statusEl = el.querySelector<HTMLElement>(".status")!;
@@ -836,18 +847,40 @@ export class NoteCardManager {
       if (contBtn.style.display !== display) contBtn.style.display = display;
     }
 
-    const sig = pairs.map((p) => `${p.status}:${p.question.length}:${p.reply.length}`).join("|");
+    const cap = NoteCardManager.THREAD_SHOWN_COLLAPSED;
+    const expanded = this.expandedThreads.has(record.noteId);
+    const shown = expanded ? pairs : pairs.slice(0, cap);
+    const hiddenCount = pairs.length - shown.length;
+
+    const sig =
+      `${expanded}|` + shown.map((p) => `${p.status}:${p.question.length}:${p.reply.length}`).join("|") +
+      `|${hiddenCount}`;
     if (el.getAttribute("data-sig") === sig) return;
     el.setAttribute("data-sig", sig);
+
     const threadEl = el.querySelector<HTMLElement>(".thread")!;
-    threadEl.innerHTML = pairs.map(() => `<div class="pair"><div class="q"></div><div class="a"></div></div>`).join("");
+    threadEl.innerHTML =
+      shown
+        .map((_, i) => `<div class="pair${i > 0 ? " fu" : ""}"><div class="q"></div><div class="a"></div></div>`)
+        .join("") +
+      (hiddenCount > 0
+        ? `<button class="tmore" type="button">▸ ${hiddenCount} more</button>`
+        : expanded && pairs.length > cap
+          ? `<button class="tmore" type="button">▾ hide</button>`
+          : "");
     const pairEls = threadEl.querySelectorAll<HTMLElement>(".pair");
-    pairs.forEach((pair, i) => {
+    shown.forEach((pair, i) => {
       const pairEl = pairEls[i]!;
       pairEl.querySelector<HTMLElement>(".q")!.textContent = pair.question;
       const answerEl = pairEl.querySelector<HTMLElement>(".a")!;
       if (pair.status === "sending" || pair.status === "streaming") answerEl.textContent = pair.reply;
       else answerEl.innerHTML = renderMarkdown(pair.reply);
+    });
+    threadEl.querySelector<HTMLButtonElement>(".tmore")?.addEventListener("click", () => {
+      if (this.expandedThreads.has(record.noteId)) this.expandedThreads.delete(record.noteId);
+      else this.expandedThreads.add(record.noteId);
+      this.updateCardContent(record.noteId);
+      requestTick();
     });
   }
 
@@ -922,6 +955,17 @@ const CARD_BASE_CSS = `
     box-shadow: 0 -1px 0 0 ${cssVar("--border-300", 0.6)};
   }
   .card .q { font-weight: 600; color: ${cssVar("--text-100")}; margin-bottom: 5px; white-space: pre-wrap; }
+  /* continuation questions read as extensions, not new messages */
+  .card .pair.fu .q { font-weight: 500; font-size: 11px; color: ${cssVar("--text-300")}; }
+  .card .pair.fu .q::before { content: "↳ "; color: ${cssVar("--text-500")}; }
+  .card .tmore {
+    display: block; width: 100%; text-align: left;
+    border: none; background: none; cursor: pointer;
+    margin-top: 6px; padding: 2px 0;
+    font-family: inherit; font-size: 10.5px; color: ${cssVar("--text-500")};
+    transition: color ${UI.transition};
+  }
+  .card .tmore:hover { color: ${cssVar("--text-200")}; }
   .card .a { white-space: normal; overflow-wrap: anywhere; }
   .card .a p { margin: 0 0 6px 0; }
   .card .a p:last-child { margin-bottom: 0; }

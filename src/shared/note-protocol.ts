@@ -28,6 +28,12 @@ export interface NoteMeta {
   /** Present on comments (position-anchored). */
   kind?: "comment";
   context?: string;
+  /**
+   * Present on "Continue" follow-ups: the human uuid of the note's first
+   * pair. Marks the message as a continuation of that note, both for the
+   * model and for reconstruction from conversation data.
+   */
+  continues?: string;
 }
 
 export function isNoteText(text: string): boolean {

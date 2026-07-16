@@ -122,10 +122,15 @@ touched plus "Cross-cutting".
 - ☐ The card shows quote (muted), question, response; ⤢ opens the fullscreen
   modal with markdown rendering; Esc/✕/backdrop closes it.
 - ☐ **Continue**: the card's Continue action reopens the margin composer;
-  submitting appends the new Q&A inside the same card (divider between
-  pairs) and streams live; the modal shows the whole thread; reload → the
-  full thread re-renders; the next normal prompt still continues the
-  conversation (parent = the newest follow-up reply).
+  submitting appends the new Q&A at the card's bottom (`↳` question style)
+  and streams live; the outgoing prompt's metadata carries
+  `"continues": <first pair uuid>`; the modal shows the whole thread; the
+  next normal prompt still continues the conversation (parent = the newest
+  follow-up reply).
+- ☐ **Thread collapse**: with more than 2 continuations, a reload shows the
+  root + 2 and a `▸ N more` toggle; expanding shows `▾ hide`; while a
+  continuation is actively streaming the thread is open with the hide
+  toggle present.
 - ☐ **Multiple notes on one message** work; **two notes near the same line
   stack with push-down** and connector lines point at their anchor lines.
 - ☐ Cards scroll with the chat (they live in the message scroll area) and

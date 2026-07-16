@@ -2,6 +2,33 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.8.0 — 2026-07-11
+
+### Continuations
+
+- Follow-up sends are now **marked in the prompt**: the metadata JSON carries
+  `"continues": <first pair's uuid>`, identifying both that the message is a
+  continuation and which note it continues.
+- Continuations **extend the bottom of the card** (smaller `↳` question
+  style). On reload, a thread longer than the root + 2 continuations
+  collapses behind a `▸ N more` toggle; while you're actively continuing,
+  the thread stays open with `▾ hide` available.
+
+### Prompt history panel
+
+- Rounded corner moved to the **top right** (was top left).
+- **Steadier current-message detection**: the tracked message is the last
+  one starting above the viewport center — monotonic in scroll position, no
+  flicker between neighbors.
+- **One clean glide to far messages**: no more estimated hops — clicking an
+  entry smooth-scrolls toward the end the message lies on, and the instant
+  the message mounts, the same motion redirects onto its exact position.
+
+### Composer bars
+
+- The restore notice and branching header now **scale with the chat panel's
+  width** (inset 48px, centered) instead of using a fixed cap.
+
 ## 0.7.0 — 2026-07-11
 
 ### Prompt history panel

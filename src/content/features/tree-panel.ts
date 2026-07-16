@@ -53,8 +53,8 @@ const PANEL_CSS = `
   button { font-family: inherit; border: none; background: none; cursor: pointer; text-align: left; }
   button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.55)}; outline-offset: 1px; }
 
-  /* Embedded left rail: flat right/bottom edges with INSET shadows so the
-     panel reads as recessed beneath the chat; the top-left corner is rounded
+  /* Embedded left rail: flat left/bottom edges with INSET shadows so the
+     panel reads as recessed beneath the chat; the top-right corner is rounded
      to sit naturally with the site's own surfaces. */
   .panel {
     position: fixed;
@@ -65,7 +65,7 @@ const PANEL_CSS = `
     font-family: ${FONT_SANS};
     color: ${cssVar("--text-300")};
     background: ${cssVar("--bg-200", 0.9)};
-    border-radius: ${UI.radiusLg} 0 0 0;
+    border-radius: 0 ${UI.radiusLg} 0 0;
     box-shadow:
       inset -14px 0 18px -14px ${cssVar("--always-black", 0.16)},
       inset 0 14px 14px -14px ${cssVar("--always-black", 0.07)};
@@ -380,20 +380,14 @@ export class TreePanelFeature implements Feature {
     } else if (sc.scrollTop <= 8) {
       uuid = rows[0]!.uuid;
     } else {
+      // The message being read = the LAST row starting above the viewport
+      // center. Monotonic in scroll position, so it never flickers between
+      // neighbors the way nearest-edge distance ties did.
       const centerY = scRect.top + scRect.height / 2;
-      let best: string | null = null;
-      let bestDist = Infinity;
+      let best: string | null = rows[0]!.uuid;
       for (const row of rows) {
-        const rect = row.el.getBoundingClientRect();
-        if (rect.top <= centerY && rect.bottom >= centerY) {
-          best = row.uuid;
-          break;
-        }
-        const dist = Math.min(Math.abs(rect.top - centerY), Math.abs(rect.bottom - centerY));
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = row.uuid;
-        }
+        if (row.el.getBoundingClientRect().top > centerY) break;
+        best = row.uuid;
       }
       uuid = best;
     }
@@ -728,33 +722,53 @@ export class TreePanelFeature implements Feature {
   }
 
   /**
-   * Long chats virtualize: the target row may not exist yet. Jump toward the
-   * estimated position (index ratio of the path) and wait for the row to
-   * mount, repeating until found — then align and pulse.
+   * Long chats virtualize: the target row may not exist yet. One clean glide
+   * — no position estimates: smooth-scroll toward the end the message lies
+   * on (rows mount as the viewport passes them), and the moment the target
+   * mounts, redirect the same motion onto its exact position.
    */
   private async scrollToMessage(uuid: string): Promise<void> {
     const tree = this.ctx.getTree();
     const sc = this.ctx.domMap.scrollContainer;
     if (!tree || !sc) return;
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const row = this.ctx.domMap.rowByUuid(uuid);
-      if (row) {
-        const rowRect = row.el.getBoundingClientRect();
-        const scRect = sc.getBoundingClientRect();
-        sc.scrollTo({ top: sc.scrollTop + (rowRect.top - scRect.top) - 24, behavior: "smooth" });
-        this.pulse(row);
-        return;
-      }
-      const path = tree.visiblePath();
-      const idx = path.findIndex((n) => n.uuid === uuid);
-      if (idx < 0) return;
-      const ratio = path.length > 1 ? idx / (path.length - 1) : 0;
-      sc.scrollTop = ratio * (sc.scrollHeight - sc.clientHeight); // instant hop
-      // rows mount as the virtualizer catches up; re-map until the target shows
-      await waitUntil(() => {
+
+    const alignTo = (row: DomRow) => {
+      const rowRect = row.el.getBoundingClientRect();
+      const scRect = sc.getBoundingClientRect();
+      sc.scrollTo({ top: sc.scrollTop + (rowRect.top - scRect.top) - 24, behavior: "smooth" });
+      this.pulse(row);
+    };
+
+    const existing = this.ctx.domMap.rowByUuid(uuid);
+    if (existing) {
+      alignTo(existing);
+      return;
+    }
+
+    // Which end is the target on? Compare its path position with the pairs
+    // currently mounted (unmounted rows are always beyond the mounted range).
+    const path = tree.visiblePath();
+    const targetIdx = path.findIndex((n) => n.uuid === uuid);
+    if (targetIdx < 0) return;
+    const mounted = this.ctx.domMap.rows.filter((r) => r.uuid);
+    const firstMountedIdx = mounted.length
+      ? path.findIndex((n) => n.uuid === mounted[0]!.uuid)
+      : -1;
+    const upward = firstMountedIdx < 0 || targetIdx < firstMountedIdx;
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      sc.scrollTo({ top: upward ? 0 : sc.scrollHeight, behavior: "smooth" });
+      const found = await waitUntil(() => {
         this.ctx.domMap.rebuild(tree);
         return !!this.ctx.domMap.rowByUuid(uuid);
-      }, 500);
+      }, 4000);
+      if (found) {
+        const row = this.ctx.domMap.rowByUuid(uuid);
+        if (row) alignTo(row); // redirect the glide onto the exact position
+        return;
+      }
+      // the glide finished without the row (scrollHeight grew as content
+      // mounted) — re-issue toward the same end with fresh geometry
     }
   }
 

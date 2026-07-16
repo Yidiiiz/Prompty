@@ -58,9 +58,9 @@ export function placeAboveComposer(host: HTMLElement, zIndex: number, liftPx = 0
   }
   const rect = q<HTMLElement>("alertBandWrapper")?.getBoundingClientRect() ?? getComposerDockRect();
   if (!rect || rect.width === 0) return; // stays hidden until measurable
-  // Narrower than the prompt box (its corners are rounded — a full-width bar
-  // clashes with them), centered over it; never wider than the box itself.
-  const width = Math.min(rect.width, Math.max(300, Math.min(rect.width - 96, 560)));
+  // Scaled to the prompt box: inset enough to clear its rounded corners,
+  // centered over it, tracking the chat panel's width as it changes.
+  const width = Math.max(Math.min(rect.width, 280), rect.width - 48);
   const left = `${Math.round(rect.left + (rect.width - width) / 2)}px`;
   const bottom = `${Math.round(window.innerHeight - rect.top + liftPx)}px`;
   const widthPx = `${Math.round(width)}px`;
