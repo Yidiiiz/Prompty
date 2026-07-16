@@ -58,12 +58,15 @@ export function placeAboveComposer(host: HTMLElement, zIndex: number, liftPx = 0
   }
   const rect = q<HTMLElement>("alertBandWrapper")?.getBoundingClientRect() ?? getComposerDockRect();
   if (!rect || rect.width === 0) return; // stays hidden until measurable
-  const left = `${Math.round(rect.left)}px`;
+  // Narrower than the prompt box (its corners are rounded — a full-width bar
+  // clashes with them), centered over it; never wider than the box itself.
+  const width = Math.min(rect.width, Math.max(300, Math.min(rect.width - 96, 560)));
+  const left = `${Math.round(rect.left + (rect.width - width) / 2)}px`;
   const bottom = `${Math.round(window.innerHeight - rect.top + liftPx)}px`;
-  const width = `${Math.round(rect.width)}px`;
+  const widthPx = `${Math.round(width)}px`;
   if (style.left !== left) style.left = left;
   if (style.bottom !== bottom) style.bottom = bottom;
-  if (style.width !== width) style.width = width;
+  if (style.width !== widthPx) style.width = widthPx;
   if (style.visibility !== "visible") style.visibility = "visible";
 }
 

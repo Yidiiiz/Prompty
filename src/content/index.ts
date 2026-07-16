@@ -11,7 +11,7 @@
  * Failure behavior: a feature that throws during construction is skipped and
  * reported with a one-time toast; the rest of the extension continues.
  */
-import { EventBus, rafThrottle } from "../shared/util";
+import { EventBus, rafThrottle, waitUntil } from "../shared/util";
 import { ConversationTree } from "../shared/tree";
 import { ROOT_SENTINEL_UUID } from "../shared/messages";
 import { getSettings, onSettingsChanged, type Settings } from "../shared/storage";
@@ -188,6 +188,7 @@ function main(): void {
     bus.emit("conversation-changed", { conversationUuid: conv });
     for (const feature of features) feature.onConversation(conv);
     requestTick();
+    validateWhenReady(); // first conversation of the session validates hooks
   }
 
   // The app also navigates from /new to /chat/{uuid} on first send without
@@ -268,14 +269,30 @@ function main(): void {
     startObserver();
     requestTick();
     validateTokens();
-    const report = validateSelectors();
-    if (report.failed.length) {
-      toastOnce(
-        "selectors-failed",
-        `Prompt Tree: some page hooks were not found (${report.failed.join(", ")}) — features relying on them are limited until updated.`
-      );
-    }
+    validateWhenReady();
   })();
+
+  /* ------------------------------------------------- selector validation */
+
+  // Selector hooks only exist once a conversation has actually rendered — a
+  // restored/unloaded tab needs seconds before rows mount, and validating too
+  // early produced false "hooks not found (userMessage)" warnings. Validate
+  // once, after the first conversation renders (or honestly times out).
+  let selectorsValidated = false;
+  function validateWhenReady(): void {
+    if (selectorsValidated || !currentConversation) return;
+    selectorsValidated = true;
+    void (async () => {
+      await waitUntil(() => domMap.rows.length > 0, 8000);
+      const report = validateSelectors();
+      if (report.failed.length) {
+        toastOnce(
+          "selectors-failed",
+          `Prompt Tree: some page hooks were not found (${report.failed.join(", ")}) — features relying on them are limited until updated.`
+        );
+      }
+    })();
+  }
 }
 
 try {

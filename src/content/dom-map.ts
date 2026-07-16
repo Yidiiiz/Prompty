@@ -187,19 +187,20 @@ export class DomMap {
       if (row.uuid) this.byUuid.set(row.uuid, row);
     }
 
-    // Scroll container: nearest scrollable ancestor of the message list.
+    // Scroll container: nearest scroll-styled ancestor of the message list.
+    // Deliberately NOT conditioned on scrollHeight > clientHeight — a short
+    // chat (e.g. right after switching the first message to a young branch)
+    // isn't scrollable yet, but it is still THE chat viewport; falling back
+    // to the document made every geometry consumer (panel position, gutter,
+    // tracking) jump to the page edge and misbehave.
     let sc: HTMLElement | null = container;
     while (sc) {
       const style = getComputedStyle(sc);
-      if (
-        (style.overflowY === "auto" || style.overflowY === "scroll") &&
-        sc.scrollHeight > sc.clientHeight + 4
-      ) {
+      if ((style.overflowY === "auto" || style.overflowY === "scroll") && sc.clientHeight >= 200) {
         break;
       }
       sc = sc.parentElement;
     }
-    this.scrollContainer =
-      sc ?? (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
+    this.scrollContainer = sc; // null when the layout isn't recognized
   }
 }

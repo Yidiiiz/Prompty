@@ -13,7 +13,8 @@ touched plus "Cross-cutting".
 - ☐ `npm run check` passes; `dist/` loads as unpacked with no manifest errors.
 - ☐ Open claude.ai: no console errors from `[prompt-tree]` (warnings about
   optional selectors are OK on pages without a conversation); in particular
-  no "page hooks not found (mainLandmark)" warning.
+  no "page hooks not found" warning — including when reopening a previously
+  unloaded/restored tab (validation waits for the conversation to render).
 - ☐ Any extension toast appears **top-center below the site header**, not at
   the bottom.
 - ☐ Popup opens; all five toggles reflect stored state; toggling updates the
@@ -69,13 +70,18 @@ touched plus "Cross-cutting".
 - ☐ **Virtualized jump**: in a chat long enough that early messages unload,
   clicking an early panel entry hops upward until the message mounts, then
   aligns and pulses it.
-- ☐ **Tracking**: scrolling the chat highlights the in-view pair in the panel
-  (chip tint; accent dot in the strip) and keeps it centered; manually
-  scrolling the panel pauses centering until the chat moves or an entry is
-  clicked.
+- ☐ **Tracking**: scrolling the chat highlights the pair at the viewport
+  center and keeps its panel entry centered, updating live during the scroll
+  (chip tint; accent dot in the strip); at the chat's bottom the LAST
+  prompt+response is current, at the top the first; manually scrolling the
+  panel pauses centering until the chat moves or an entry is clicked.
+- ☐ **Short-branch stability**: switch the FIRST message to a branch with
+  only 1–2 turns — the panel stays in place (no jump to the page edge) and
+  notes/tracking keep working.
 - ☐ **Numbering**: on branch 2 of 3, the chip reads `2` and the list beneath
   shows only branches `1` and `3` (their real numbers).
-- ☐ The panel top leaves the chat title visible (~44px headroom).
+- ☐ The panel top sits just below the chat title (16px headroom, rounded
+  top-left corner) — neither covering the title nor hanging far below it.
 - ☐ **Clicking a branch option switches WITHOUT a page reload**: the chat
   re-renders in place (native arrows are driven for you) and the panel
   follows. **Direct jump 1 → 3** works (steps through 2 transiently).
@@ -170,11 +176,12 @@ touched plus "Cross-cutting".
   reattaches (or an honest "couldn't reattach" notice appears).
 - ☐ Attach >5 MB total, type, reload: banner shows "(attachments not saved)";
   Restore refills text only.
-- ☐ The restore notice renders **inside the site's alert band** above the
-  prompt box (exactly where native notices appear — fully visible, rounded
-  top, hairline ring), with link-style Restore/Clear; with branch mode also
-  active, both bars stack in the band without overlap; both heal after the
-  app re-renders the composer area (e.g. window resize).
+- ☐ The restore notice renders above the prompt box, **narrower than the box
+  and centered** (clear of its rounded corners), rounded top, hairline ring,
+  link-style Restore/Clear; with branch mode also active, both bars stack
+  without overlap and heal after the app re-renders the composer area.
+- ☐ **The notice dismisses itself when stale**: typing in the composer or
+  sending anything (normal, branch, or the restored message) removes it.
 - ☐ **Branch draft**: enter branch mode, type, reload, Restore → branch mode
   re-activates on the same target (ghost/hide/header) with text refilled;
   send branches correctly.

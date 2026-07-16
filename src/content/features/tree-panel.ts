@@ -53,8 +53,9 @@ const PANEL_CSS = `
   button { font-family: inherit; border: none; background: none; cursor: pointer; text-align: left; }
   button:focus-visible { outline: 2px solid ${cssVar("--accent-main-100", 0.55)}; outline-offset: 1px; }
 
-  /* Embedded left rail: square corners and INSET shadows so the panel reads
-     as recessed beneath the chat, not floating above it. */
+  /* Embedded left rail: flat right/bottom edges with INSET shadows so the
+     panel reads as recessed beneath the chat; the top-left corner is rounded
+     to sit naturally with the site's own surfaces. */
   .panel {
     position: fixed;
     z-index: ${Z_PANEL};
@@ -64,7 +65,7 @@ const PANEL_CSS = `
     font-family: ${FONT_SANS};
     color: ${cssVar("--text-300")};
     background: ${cssVar("--bg-200", 0.9)};
-    border-radius: 0;
+    border-radius: ${UI.radiusLg} 0 0 0;
     box-shadow:
       inset -14px 0 18px -14px ${cssVar("--always-black", 0.16)},
       inset 0 14px 14px -14px ${cssVar("--always-black", 0.07)};
@@ -200,8 +201,9 @@ const PANEL_CSS = `
     flex: none;
     width: 7px; height: 9px;
     margin: -1px 0 0 1px;
-    border-left: 1px solid ${cssVar("--border-200")};
-    border-bottom: 1px solid ${cssVar("--border-200")};
+    /* grayed out to match the dimmed response text */
+    border-left: 1px solid ${cssVar("--text-500", 0.35)};
+    border-bottom: 1px solid ${cssVar("--text-500", 0.35)};
     border-bottom-left-radius: 5px;
   }
   /* response paired with a branch header aligns under the header text */
@@ -340,8 +342,8 @@ export class TreePanelFeature implements Feature {
         : "full";
 
     // flush against the scroll area's left edge — embedded, not floating —
-    // starting below the chat-title area (+44px headroom)
-    const top = Math.round(scRect.top) + 44;
+    // with just enough headroom that the chat title stays clear
+    const top = Math.round(scRect.top) + 16;
     const left = `${Math.round(scRect.left)}px`;
     const topPx = `${top}px`;
     const height = `${Math.max(160, window.innerHeight - top)}px`;
@@ -358,18 +360,44 @@ export class TreePanelFeature implements Feature {
     this.render(); // signature check makes this cheap when nothing changed
   }
 
-  /** First visible mapped row decides the "current" pair (prompt uuid). */
+  /**
+   * The "current" pair is the row at the chat viewport's CENTER; pinned to
+   * the first/last pair when the chat is scrolled to its top/bottom (at the
+   * bottom the last prompt+response is what the user is reading).
+   */
   private trackCurrentMessage(scRect: DOMRect): void {
     const tree = this.ctx.getTree();
-    if (!tree) return;
-    let uuid: string | null = null;
-    for (const row of this.ctx.domMap.rows) {
-      if (!row.uuid || row.el.classList.contains("pt-note-hidden")) continue;
-      if (row.el.getBoundingClientRect().bottom > scRect.top + 100) {
-        uuid = row.uuid;
-        break;
+    const sc = this.ctx.domMap.scrollContainer;
+    if (!tree || !sc) return;
+    const rows = this.ctx.domMap.rows.filter(
+      (r) => r.uuid && !r.el.classList.contains("pt-note-hidden")
+    );
+    if (!rows.length) return;
+
+    let uuid: string | null;
+    if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8) {
+      uuid = rows[rows.length - 1]!.uuid;
+    } else if (sc.scrollTop <= 8) {
+      uuid = rows[0]!.uuid;
+    } else {
+      const centerY = scRect.top + scRect.height / 2;
+      let best: string | null = null;
+      let bestDist = Infinity;
+      for (const row of rows) {
+        const rect = row.el.getBoundingClientRect();
+        if (rect.top <= centerY && rect.bottom >= centerY) {
+          best = row.uuid;
+          break;
+        }
+        const dist = Math.min(Math.abs(rect.top - centerY), Math.abs(rect.bottom - centerY));
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = row.uuid;
+        }
       }
+      uuid = best;
     }
+
     if (uuid) {
       // normalize responses to their pair's prompt (that's what panel rows key on)
       const node = tree.nodes.get(uuid);

@@ -93,6 +93,8 @@ export class DraftsFeature implements Feature {
     });
     ctx.bus.on("send-observed", (msg) => {
       this.lastSendAt.set(msg.conversationUuid, Date.now());
+      // any send (normal, branch, restored draft) makes the offer stale
+      if (msg.conversationUuid === this.bannerForConversation) this.removeBanner();
     });
     ctx.bus.on("stream-done", (msg) => {
       if (!this.enabled) return;
@@ -154,7 +156,10 @@ export class DraftsFeature implements Feature {
     if (composer && !this.composerListenerAttached.has(composer)) {
       this.composerListenerAttached.add(composer);
       composer.addEventListener("input", () => {
-        if (this.enabled) this.saveMain();
+        if (!this.enabled) return;
+        // typing overwrites the stored draft, so the restore offer is stale
+        this.removeBanner();
+        this.saveMain();
       });
     }
     // keep the banner overlaid on the site's alert-band area

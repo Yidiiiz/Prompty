@@ -53,6 +53,9 @@ export function startObserver(): void {
     attributeFilter: ["class", "style", "data-mode", "data-testid", "aria-label"],
   });
   window.addEventListener("resize", () => runTick());
+  // Scrolling mutates nothing, but geometry-driven features (current-message
+  // tracking, gutter anchors) must follow it. Capture catches inner scrollers.
+  document.addEventListener("scroll", () => runTick(), { capture: true, passive: true });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) runTick();
   });

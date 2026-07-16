@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt Tree",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Personal power-user tools for claude.ai: branch composing, a conversation tree panel, inline notes, margin comments, and draft autosave. Not affiliated with Anthropic.",
   "minimum_chrome_version": "111",
   "permissions": ["storage"],

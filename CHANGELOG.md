@@ -2,6 +2,43 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.7.0 — 2026-07-11
+
+### Prompt history panel
+
+- **Live tracking actually works now**: chat scrolling never triggered DOM
+  mutations, so the tracker only ran when something else changed — a
+  capture-phase scroll listener now drives geometry updates, and the
+  highlight/centering follow every scroll and every panel click immediately.
+- **"Current" is the message at the chat viewport's center** (as requested):
+  pinned to the first pair at the top of the chat and to the last
+  prompt+response when scrolled to the bottom; the panel keeps that entry
+  centered unless you scroll the panel yourself.
+- **No more breaking/jumping on short branches**: switching the first message
+  to a young branch made the chat non-scrollable, which collapsed the
+  scroll-container detection onto the document — the panel jumped to the
+  page edge and every geometry consumer misbehaved. Detection now accepts the
+  chat viewport by its overflow style alone.
+- Repositioned: 16px below the scroll area (the previous 44px sat under the
+  title), with a rounded top-left corner for a more integrated look.
+- The rounded-L response indicator is grayed to match the dimmed response
+  text.
+
+### Composer bars
+
+- The restore notice / branching header are now **narrower than the prompt
+  box and centered** over it (a full-width bar clashed with the box's
+  rounded corners).
+- The restore offer **dismisses itself once it's stale**: typing in the
+  composer (which overwrites the stored draft) or any send — normal, branch,
+  or the restored message itself — removes the banner.
+
+### Fixes
+
+- **No more false "page hooks not found (userMessage)" warning** when
+  reopening an unloaded tab: selector validation now waits until the first
+  conversation has actually rendered (bounded wait) before checking hooks.
+
 ## 0.6.0 — 2026-07-11
 
 ### Continue a note
