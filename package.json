@@ -1,6 +1,6 @@
 {
   "name": "prompt-tree",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "description": "Prompt Tree - a personal-use browser extension that augments claude.ai with branch composing, a conversation tree panel, inline notes, margin comments, and draft autosave.",
   "type": "module",

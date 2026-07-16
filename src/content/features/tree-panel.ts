@@ -27,7 +27,7 @@
 import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { summarizer } from "../../shared/summary";
 import { getPanelCollapsed, setPanelCollapsed } from "../../shared/storage";
-import { escapeHtml, rafThrottle, waitUntil } from "../../shared/util";
+import { clamp, escapeHtml, rafThrottle } from "../../shared/util";
 import type { TreeNode } from "../../shared/tree";
 import { subscribe } from "../observer";
 import { NativeArrowsAdapter, type BranchSwitchAdapter } from "../branch-switch";
@@ -38,6 +38,17 @@ const MIN_VIEWPORT_FOR_FULL = 1100;
 const FULL_WIDTH = 280;
 const STRIP_WIDTH = 36;
 const OPTIONS_SHOWN_COLLAPSED = 2;
+
+/** Keys that scroll the chat — pressing one cancels an in-flight glide. */
+const SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
 
 type PanelMode = "full" | "strip" | "hidden";
 
@@ -265,6 +276,8 @@ export class TreePanelFeature implements Feature {
    *  pauses until the chat's current message changes again. */
   private userScrolledPanel = false;
   private panelScrollGuard = false;
+  /** Incremented to cancel any in-flight glide (newer click, navigation). */
+  private glideId = 0;
   private lastSignature = "";
   /** Summary memo — summarize() runs regexes over full message text, so it
    *  must not run per node per tick. Keyed by uuid+len (streaming-safe). */
@@ -281,6 +294,7 @@ export class TreePanelFeature implements Feature {
     });
     ctx.bus.on("tree-updated", () => this.render());
     ctx.bus.on("conversation-changed", () => {
+      this.glideId++; // abort any glide targeting the old conversation
       this.expandedBranches.clear();
       this.drawerItems = [];
       this.deletedItems = [];
@@ -361,30 +375,42 @@ export class TreePanelFeature implements Feature {
   }
 
   /**
-   * The "current" pair is the row at the chat viewport's CENTER; pinned to
-   * the first/last pair when the chat is scrolled to its top/bottom (at the
-   * bottom the last prompt+response is what the user is reading).
+   * The "current" pair is decided entirely from LIVE row rects — never from
+   * scrollTop/scrollHeight, which virtualization spacers make unreliable
+   * (they made the bottom message register as a higher one). If the
+   * conversation's true last message is fully on screen, it is current (the
+   * user is caught up at the end); symmetrically for the first message;
+   * otherwise it's the last row starting above the viewport center
+   * (monotonic in scroll position, so it never flickers between neighbors).
    */
   private trackCurrentMessage(scRect: DOMRect): void {
     const tree = this.ctx.getTree();
-    const sc = this.ctx.domMap.scrollContainer;
-    if (!tree || !sc) return;
+    if (!tree) return;
     const rows = this.ctx.domMap.rows.filter(
       (r) => r.uuid && !r.el.classList.contains("pt-note-hidden")
     );
     if (!rows.length) return;
 
+    // Bottom/top pinning only applies when the mounted edge row IS the
+    // path's real end/start (virtualization can leave either unmounted).
+    const path = tree.visiblePath();
+    const firstRow = rows[0]!;
+    const lastRow = rows[rows.length - 1]!;
+
     let uuid: string | null;
-    if (sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8) {
-      uuid = rows[rows.length - 1]!.uuid;
-    } else if (sc.scrollTop <= 8) {
-      uuid = rows[0]!.uuid;
+    if (
+      lastRow.uuid === path[path.length - 1]?.uuid &&
+      lastRow.el.getBoundingClientRect().bottom <= scRect.bottom + 8
+    ) {
+      uuid = lastRow.uuid;
+    } else if (
+      firstRow.uuid === path[0]?.uuid &&
+      firstRow.el.getBoundingClientRect().top >= scRect.top - 8
+    ) {
+      uuid = firstRow.uuid;
     } else {
-      // The message being read = the LAST row starting above the viewport
-      // center. Monotonic in scroll position, so it never flickers between
-      // neighbors the way nearest-edge distance ties did.
       const centerY = scRect.top + scRect.height / 2;
-      let best: string | null = rows[0]!.uuid;
+      let best: string | null = firstRow.uuid;
       for (const row of rows) {
         if (row.el.getBoundingClientRect().top > centerY) break;
         best = row.uuid;
@@ -722,53 +748,97 @@ export class TreePanelFeature implements Feature {
   }
 
   /**
-   * Long chats virtualize: the target row may not exist yet. One clean glide
-   * — no position estimates: smooth-scroll toward the end the message lies
-   * on (rows mount as the viewport passes them), and the moment the target
-   * mounts, redirect the same motion onto its exact position.
+   * One frame-driven glide to the message. Every frame the DOM map is
+   * rebuilt and the target's position re-read from its LIVE rect — no
+   * estimates, no stale offsets. While the target row isn't mounted yet
+   * (long chats virtualize), the glide heads toward the end of the chat it
+   * lies on; per-frame steps are capped below a viewport height so every
+   * region actually passes through the viewport and gets a chance to mount,
+   * and the moment the target appears the same motion redirects onto it.
+   *
+   * The glide NEVER fights the user: any genuine scroll input (wheel,
+   * touch, scroll keys, pressing the mouse to grab the scrollbar) or a
+   * newer glide cancels it immediately.
    */
   private async scrollToMessage(uuid: string): Promise<void> {
     const tree = this.ctx.getTree();
     const sc = this.ctx.domMap.scrollContainer;
     if (!tree || !sc) return;
-
-    const alignTo = (row: DomRow) => {
-      const rowRect = row.el.getBoundingClientRect();
-      const scRect = sc.getBoundingClientRect();
-      sc.scrollTo({ top: sc.scrollTop + (rowRect.top - scRect.top) - 24, behavior: "smooth" });
-      this.pulse(row);
-    };
-
-    const existing = this.ctx.domMap.rowByUuid(uuid);
-    if (existing) {
-      alignTo(existing);
-      return;
-    }
-
-    // Which end is the target on? Compare its path position with the pairs
-    // currently mounted (unmounted rows are always beyond the mounted range).
     const path = tree.visiblePath();
     const targetIdx = path.findIndex((n) => n.uuid === uuid);
     if (targetIdx < 0) return;
-    const mounted = this.ctx.domMap.rows.filter((r) => r.uuid);
-    const firstMountedIdx = mounted.length
-      ? path.findIndex((n) => n.uuid === mounted[0]!.uuid)
-      : -1;
-    const upward = firstMountedIdx < 0 || targetIdx < firstMountedIdx;
 
-    for (let attempt = 0; attempt < 4; attempt++) {
-      sc.scrollTo({ top: upward ? 0 : sc.scrollHeight, behavior: "smooth" });
-      const found = await waitUntil(() => {
+    const id = ++this.glideId;
+    let cancelled = false;
+    const onInput = () => {
+      cancelled = true;
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      const t = ev.target as HTMLElement | null;
+      if (t && (t.isContentEditable || t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      if (SCROLL_KEYS.has(ev.key)) cancelled = true;
+    };
+    const opts: AddEventListenerOptions = { capture: true, passive: true };
+    window.addEventListener("wheel", onInput, opts);
+    window.addEventListener("touchstart", onInput, opts);
+    window.addEventListener("mousedown", onInput, opts);
+    window.addEventListener("keydown", onKey, opts);
+
+    try {
+      // Which end is the unmounted target on? Its path position vs the
+      // mounted rows' — unmounted rows are always beyond the mounted range.
+      const mounted = this.ctx.domMap.rows.filter((r) => r.uuid);
+      const firstMountedIdx = mounted.length
+        ? path.findIndex((n) => n.uuid === mounted[0]!.uuid)
+        : -1;
+      const upward = firstMountedIdx < 0 || targetIdx < firstMountedIdx;
+
+      const nextFrame = () => new Promise<number>((r) => requestAnimationFrame(r));
+      let stalledFrames = 0;
+      let lastScrollHeight = -1;
+
+      while (!cancelled && id === this.glideId && sc.isConnected) {
         this.ctx.domMap.rebuild(tree);
-        return !!this.ctx.domMap.rowByUuid(uuid);
-      }, 4000);
-      if (found) {
         const row = this.ctx.domMap.rowByUuid(uuid);
-        if (row) alignTo(row); // redirect the glide onto the exact position
-        return;
+        const maxTop = sc.scrollHeight - sc.clientHeight;
+        let desired: number;
+        if (row) {
+          const delta = row.el.getBoundingClientRect().top - sc.getBoundingClientRect().top;
+          desired = clamp(sc.scrollTop + delta - 24, 0, maxTop);
+          if (Math.abs(desired - sc.scrollTop) < 2) {
+            sc.scrollTop = desired;
+            this.pulse(row);
+            return;
+          }
+        } else {
+          desired = upward ? 0 : maxTop;
+          if (Math.abs(desired - sc.scrollTop) < 2) {
+            // parked at the end without the target — wait for the
+            // virtualizer to mount more content; give up once it stops
+            stalledFrames = sc.scrollHeight === lastScrollHeight ? stalledFrames + 1 : 0;
+            lastScrollHeight = sc.scrollHeight;
+            if (stalledFrames > 30) return;
+            await nextFrame();
+            continue;
+          }
+        }
+        // Eased step: covers 18% of the remaining distance (min 40px so the
+        // tail doesn't crawl), capped at half a viewport per frame so
+        // virtualized regions are never skipped over unmounted.
+        const remaining = desired - sc.scrollTop;
+        const step = Math.min(
+          Math.abs(remaining),
+          Math.max(40, Math.abs(remaining) * 0.18),
+          sc.clientHeight / 2
+        );
+        sc.scrollTop += Math.sign(remaining) * step;
+        await nextFrame();
       }
-      // the glide finished without the row (scrollHeight grew as content
-      // mounted) — re-issue toward the same end with fresh geometry
+    } finally {
+      window.removeEventListener("wheel", onInput, opts);
+      window.removeEventListener("touchstart", onInput, opts);
+      window.removeEventListener("mousedown", onInput, opts);
+      window.removeEventListener("keydown", onKey, opts);
     }
   }
 

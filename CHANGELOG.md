@@ -2,6 +2,28 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.8.1 — 2026-07-16
+
+### Prompt history panel
+
+- **The glide never fights your scrolling**: any wheel, touch, scroll-key,
+  or scrollbar input cancels an in-flight jump immediately (so does clicking
+  another entry or switching conversations). Previously the jump loop kept
+  re-issuing scrolls for up to 16 seconds.
+- **Glide rebuilt frame-by-frame with live positions**: instead of native
+  smooth scrolls that stalled on long chats, the panel now steps the chat
+  every animation frame, re-reading the target's on-screen position from
+  its live rect each time — no estimates, no stale offsets. Steps are
+  capped at half a viewport per frame so virtualized regions always pass
+  through the viewport and get a chance to mount.
+- **Current-message tracking no longer trusts scroll offsets**: bottom/top
+  pinning previously compared `scrollTop` against `scrollHeight`, which
+  virtualization spacers make unreliable — at the bottom of a long chat the
+  panel highlighted a higher message, and clicking anything below it just
+  flashed. Pinning now checks the true first/last message's live rect
+  against the viewport (and only when that message is really the path's
+  end), so positions are determined live.
+
 ## 0.8.0 — 2026-07-11
 
 ### Continuations
