@@ -158,6 +158,8 @@ npm run build       # esbuild → dist/
 npm run check       # both
 ```
 
+- `PROJECT.md` — the living snapshot: current feature specs, architecture
+  summary, and the condensed update history.
 - `docs/recon-report.md` — the API/DOM ground truth all code keys off.
 - `docs/architecture.md` — module map, data flow, storage schema, decisions.
 - `docs/test-checklist.md` — the manual test matrix; run it after any change.
