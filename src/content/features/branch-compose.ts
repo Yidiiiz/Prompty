@@ -54,6 +54,10 @@ export class BranchComposeFeature implements Feature {
         // the streaming reply is visible; keep state to reactivate on failure.
         this.mode.awaitingOutcome = true;
         this.clearVisuals();
+        this.ctx.bus.emit("branch-mode-changed", {
+          conversationUuid: msg.conversationUuid,
+          targetUuid: null,
+        });
       }
     });
     ctx.bus.on("stream-done", (msg) => {
@@ -146,17 +150,20 @@ export class BranchComposeFeature implements Feature {
       parentMessageUuid: node.parentUuid,
     });
     this.applyVisuals();
+    this.ctx.bus.emit("branch-mode-changed", { conversationUuid, targetUuid });
   }
 
   cancel(): void {
     if (!this.mode) return;
+    const conversationUuid = this.mode.conversationUuid;
     this.ctx.sendToPage({
       type: "set-parent-override",
-      conversationUuid: this.mode.conversationUuid,
+      conversationUuid,
       parentMessageUuid: null,
     });
     this.mode = null;
     this.clearVisuals();
+    this.ctx.bus.emit("branch-mode-changed", { conversationUuid, targetUuid: null });
   }
 
   isActive(): boolean {

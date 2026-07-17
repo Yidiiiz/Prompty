@@ -12,7 +12,7 @@
  * reported with a one-time toast; the rest of the extension continues.
  */
 import { EventBus, rafThrottle, waitUntil } from "../shared/util";
-import { ConversationTree } from "../shared/tree";
+import { ConversationTree, type TreeNode } from "../shared/tree";
 import { ROOT_SENTINEL_UUID } from "../shared/messages";
 import { getSettings, onSettingsChanged, type Settings } from "../shared/storage";
 import { validateSelectors } from "../shared/selectors";
@@ -74,24 +74,34 @@ function main(): void {
   });
 
   /**
-   * Hidden in-thread note messages extend the thread past what the app's own
+   * Hidden in-thread note messages extend threads past what the app's own
    * state knows. Whenever a tree changes structurally, tell the page script
-   * how to remap the app's next send: parent == last visible message → real
-   * tail (the newest note reply). Cleared when the leaf is a visible message.
+   * how to remap the app's requests: EVERY visible message with a hidden
+   * note chain hanging off it maps to that chain's tail (the newest note
+   * reply, followed through follow-ups). Covers the next send's parent AND
+   * the app's own branch switches — a PUT of a leaf that still has (note)
+   * children is rejected by the server ("unexpected children"), and on a
+   * branch switch the app targets exactly such a message.
    */
-  function syncThreadTail(conversationUuid: string): void {
+  function syncThreadTails(conversationUuid: string): void {
     const tree = trees.get(conversationUuid);
     if (!tree) return;
-    let from: string | null = null;
-    let to: string | null = null;
-    let node = tree.activeLeafUuid ? tree.nodes.get(tree.activeLeafUuid) : undefined;
-    if (node?.isNote) {
-      to = node.uuid;
-      while (node && node.isNote) node = tree.nodes.get(node.parentUuid);
-      from = node?.uuid ?? null;
-      if (!from) to = null; // note chain reaches the root: nothing visible to remap
+    const tails: Array<{ from: string; to: string }> = [];
+    for (const node of tree.nodes.values()) {
+      if (node.isNote) continue;
+      let cur = node;
+      for (;;) {
+        const noteKids = cur.children
+          .map((u) => tree.nodes.get(u))
+          .filter((n): n is TreeNode => !!n && n.isNote)
+          .sort((a, b) => a.index - b.index);
+        const next = noteKids[noteKids.length - 1];
+        if (!next) break;
+        cur = next;
+      }
+      if (cur !== node) tails.push({ from: node.uuid, to: cur.uuid });
     }
-    sendToPage({ type: "set-thread-tail", conversationUuid, fromUuid: from, toUuid: to });
+    sendToPage({ type: "set-thread-tails", conversationUuid, tails });
   }
 
   onPageMessage((msg) => {
@@ -100,7 +110,7 @@ function main(): void {
         const tree = ConversationTree.fromConversation(msg.conversation);
         if (!tree) return;
         trees.set(tree.conversationUuid, tree);
-        syncThreadTail(tree.conversationUuid);
+        syncThreadTails(tree.conversationUuid);
         if (tree.conversationUuid === currentConversation) emitTreeUpdated();
         break;
       }
@@ -118,7 +128,7 @@ function main(): void {
             prompt: msg.prompt,
           });
           streamBuffers.set(msg.turnMessageUuids.assistant_message_uuid, "");
-          syncThreadTail(msg.conversationUuid);
+          syncThreadTails(msg.conversationUuid);
         }
         bus.emit("send-observed", msg);
         if (msg.conversationUuid === currentConversation) emitTreeUpdated();
@@ -146,7 +156,7 @@ function main(): void {
         break;
       case "leaf-switched": {
         trees.get(msg.conversationUuid)?.setLeaf(msg.leafUuid);
-        syncThreadTail(msg.conversationUuid);
+        syncThreadTails(msg.conversationUuid);
         bus.emit("leaf-switched", msg);
         if (msg.conversationUuid === currentConversation) emitTreeUpdated();
         break;

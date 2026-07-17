@@ -2,6 +2,39 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.10.0 — 2026-07-16
+
+### Prompt history panel
+
+- **Branch mode truncates the panel too**: "Branch from here" already ghosts
+  the message and hides everything after it in the chat; the panel now drops
+  those same entries until the branch is sent or cancelled.
+- **No more jitter after a jump lands**: the glide forces instant scrolling
+  on the container for its duration (the site's own smooth-scroll was
+  fighting the per-frame stepping), and once the target has hovered within a
+  few dozen pixels for several frames it snaps and stops instead of chasing
+  virtualization-induced layout shifts up and down.
+- **Tracking follows the message at the top of the viewport** instead of a
+  center line: small messages passed the center line in groups and went
+  undetected; every message crosses the top edge one by one, so the
+  highlight now updates through runs of short messages.
+- **Scrollbar: always visible, dark and quiet** (5px, subtle black), rather
+  than the light default or hover-only visibility.
+
+### Notes & comments
+
+- **Branch switches no longer trip over hidden notes**: switching to a
+  branch whose last visible message carries a hidden note chain made the
+  app set a non-leaf as the conversation leaf — the server rejected it with
+  "Current leaf message has unexpected children". The thread-tail remap now
+  covers EVERY message with a note chain (not just the active branch's
+  tail) and also rewrites the app's branch-switch requests, so leaf updates
+  always point at true leaves. Cards anchored to messages that left the
+  path already disappear with the switch.
+- **Enter sends** in the note/comment composer and the in-card Continue box;
+  Shift+Enter makes a new line.
+- Thread toggles: "more" caret now points down (▾), "hide" points up (▴).
+
 ## 0.9.0 — 2026-07-16
 
 ### Prompt history panel

@@ -345,7 +345,11 @@ export class NoteCardManager {
     });
     textarea.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") this.closeComposer();
-      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) submit();
+      // Enter sends; Shift+Enter makes a new line
+      if (ev.key === "Enter" && !ev.shiftKey) {
+        ev.preventDefault();
+        submit();
+      }
     });
     const submit = () => {
       const text = textarea.value.trim();
@@ -833,7 +837,11 @@ export class NoteCardManager {
     };
     fuText.addEventListener("keydown", (ev) => {
       if (ev.key === "Escape") this.closeInlineFollowUp(el);
-      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) fuSubmit();
+      // Enter sends; Shift+Enter makes a new line
+      if (ev.key === "Enter" && !ev.shiftKey) {
+        ev.preventDefault();
+        fuSubmit();
+      }
     });
     fucomp.querySelector<HTMLButtonElement>("button.primary")!.addEventListener("click", fuSubmit);
     fucomp
@@ -909,9 +917,9 @@ export class NoteCardManager {
         .map((_, i) => `<div class="pair${i > 0 ? " fu" : ""}"><div class="q"></div><div class="a"></div></div>`)
         .join("") +
       (hiddenCount > 0
-        ? `<button class="tmore" type="button">▸ ${hiddenCount} more</button>`
+        ? `<button class="tmore" type="button">▾ ${hiddenCount} more</button>`
         : expanded && pairs.length > cap
-          ? `<button class="tmore" type="button">▾ hide</button>`
+          ? `<button class="tmore" type="button">▴ hide</button>`
           : "");
     const pairEls = threadEl.querySelectorAll<HTMLElement>(".pair");
     shown.forEach((pair, i) => {

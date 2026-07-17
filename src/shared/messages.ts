@@ -91,16 +91,19 @@ export type ContentToPageMessage =
       prompt: string;
     }
   /**
-   * The thread's real tail differs from what the app believes because hidden
-   * note messages extended it: an app send parented to `fromUuid` must be
-   * rewritten to `toUuid` so the conversation continues UNDER the notes
-   * instead of branching around them. Nulls clear the mapping.
+   * Thread tails differ from what the app believes wherever hidden note
+   * messages extended them: any app request referencing `from` (a visible
+   * message) as the thread's end — a send's parent_message_uuid or a branch
+   * switch's current_leaf_message_uuid — must be rewritten to `to` (the
+   * newest note reply under it), so the conversation continues UNDER the
+   * notes and leaf switches always point at true leaves (the server rejects
+   * a leaf that still has children). Replaces the conversation's whole map;
+   * an empty list clears it.
    */
   | {
-      type: "set-thread-tail";
+      type: "set-thread-tails";
       conversationUuid: string;
-      fromUuid: string | null;
-      toUuid: string | null;
+      tails: Array<{ from: string; to: string }>;
     }
   /** Switch the active leaf via PUT; optionally refetch the tree after. */
   | { type: "switch-leaf"; conversationUuid: string; leafUuid: string; refetchTree: boolean }

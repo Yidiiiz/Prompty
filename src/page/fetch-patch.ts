@@ -43,11 +43,13 @@ let orgUuid: string | null = null;
 /** conversation uuid -> parent uuid to inject into the next app send (branch-compose). */
 const parentOverrides = new Map<string, string>();
 /**
- * conversation uuid -> {from, to}: hidden in-thread note messages extended
- * the thread past what the app knows, so an app send parented to `from` (the
- * last VISIBLE message) is rewritten to `to` (the real tail, a note reply).
+ * conversation uuid -> (visible uuid -> hidden tail uuid): hidden in-thread
+ * note messages extend threads past what the app knows. Any app request that
+ * references the visible message as a thread's end — a send's
+ * parent_message_uuid or a leaf PUT's current_leaf_message_uuid — is
+ * rewritten to the chain's real tail (the newest note reply).
  */
-const threadTails = new Map<string, { from: string; to: string }>();
+const threadTails = new Map<string, Map<string, string>>();
 /** conversation uuid -> last full app send payload (template for side-branch sends). */
 const sendTemplates = new Map<string, Record<string, unknown>>();
 /** conversation uuid -> model id (from tree loads and sends). */
@@ -62,13 +64,12 @@ export function setParentOverride(conversationUuid: string, parentUuid: string |
   else parentOverrides.set(conversationUuid, parentUuid);
 }
 
-export function setThreadTail(
+export function setThreadTails(
   conversationUuid: string,
-  fromUuid: string | null,
-  toUuid: string | null
+  tails: Array<{ from: string; to: string }>
 ): void {
-  if (fromUuid && toUuid) threadTails.set(conversationUuid, { from: fromUuid, to: toUuid });
-  else threadTails.delete(conversationUuid);
+  if (!tails.length) threadTails.delete(conversationUuid);
+  else threadTails.set(conversationUuid, new Map(tails.map((t) => [t.from, t.to])));
 }
 
 export function getSendTemplate(conversationUuid: string): Record<string, unknown> | null {
@@ -190,9 +191,11 @@ async function handleCompletion(
   // and this flag intentionally stays false — it drives branch-mode exit.
   let bodyChanged = rewriteApplied;
   if (!rewriteApplied) {
-    const tail = threadTails.get(conversationUuid);
-    if (tail && payload["parent_message_uuid"] === tail.from) {
-      payload["parent_message_uuid"] = tail.to;
+    const parent = payload["parent_message_uuid"];
+    const to =
+      typeof parent === "string" ? threadTails.get(conversationUuid)?.get(parent) : undefined;
+    if (to) {
+      payload["parent_message_uuid"] = to;
       bodyChanged = true;
     }
   }
@@ -264,20 +267,32 @@ async function handleLeafPut(
   conversationUuid: string
 ): Promise<Response> {
   const bodyText = await readBodyText(input, init);
-  const res = await originalFetch(input, init);
-  if (res.ok && bodyText) {
+  let leafUuid: string | null = null;
+  let newBody: string | null = null;
+  if (bodyText) {
     try {
-      const body = JSON.parse(bodyText) as { current_leaf_message_uuid?: unknown };
-      if (typeof body.current_leaf_message_uuid === "string") {
-        postToContent({
-          type: "leaf-switched",
-          conversationUuid,
-          leafUuid: body.current_leaf_message_uuid,
-        });
+      const body = JSON.parse(bodyText) as Record<string, unknown>;
+      const requested = body["current_leaf_message_uuid"];
+      if (typeof requested === "string") {
+        leafUuid = requested;
+        // The app switches branches by PUTting the branch's last VISIBLE
+        // message as the leaf — but a hidden note chain can extend past it,
+        // and a leaf that still has children is rejected ("Current leaf
+        // message has unexpected children"). Substitute the chain's tail.
+        const to = threadTails.get(conversationUuid)?.get(requested);
+        if (to) {
+          body["current_leaf_message_uuid"] = to;
+          leafUuid = to;
+          newBody = JSON.stringify(body);
+        }
       }
     } catch {
-      /* unparseable body: nothing to report */
+      /* unparseable body: pass through untouched */
     }
+  }
+  const res = await forward(input, init, newBody);
+  if (res.ok && leafUuid) {
+    postToContent({ type: "leaf-switched", conversationUuid, leafUuid });
   }
   return res;
 }

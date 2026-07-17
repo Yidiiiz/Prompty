@@ -32,6 +32,8 @@ export interface BusEvents {
     stopReason: string | null;
   };
   "leaf-switched": { conversationUuid: string; leafUuid: string };
+  /** Branch-compose entered (targetUuid set) or exited (null). */
+  "branch-mode-changed": { conversationUuid: string; targetUuid: string | null };
   "leaf-switch-failed": { conversationUuid: string; status: number };
   "note-send-started": {
     noteId: string;

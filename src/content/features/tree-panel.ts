@@ -113,19 +113,18 @@ const PANEL_CSS = `
     overflow-y: auto; overflow-x: hidden;
     padding: 0 12px 0 12px;
     scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
+    scrollbar-color: ${cssVar("--always-black", 0.35)} transparent;
     /* entries dissolve at the scroll edges instead of clipping */
     -webkit-mask-image: linear-gradient(to bottom,
       transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
     mask-image: linear-gradient(to bottom,
       transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
   }
-  /* scrollbar stays invisible until the pointer is over the list, then faint */
-  .list::-webkit-scrollbar { width: 4px; }
+  /* always visible, but dark and quiet instead of the light default */
+  .list::-webkit-scrollbar { width: 5px; }
   .list::-webkit-scrollbar-track { background: transparent; }
-  .list::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
-  .list:hover { scrollbar-color: ${cssVar("--border-200", 0.25)} transparent; }
-  .list:hover::-webkit-scrollbar-thumb { background: ${cssVar("--border-200", 0.25)}; }
+  .list::-webkit-scrollbar-thumb { background: ${cssVar("--always-black", 0.35)}; border-radius: 3px; }
+  .list::-webkit-scrollbar-thumb:hover { background: ${cssVar("--always-black", 0.55)}; }
   /* breathing room so entries at the very start/end can still be centered */
   .list::before, .list::after {
     content: ""; display: block;
@@ -284,6 +283,8 @@ export class TreePanelFeature implements Feature {
   private deletedItems: Array<{ noteId: string; label: string }> = [];
   /** Prompt uuid of the pair currently in view in the chat. */
   private currentViewUuid: string | null = null;
+  /** Branch-compose target: entries below it drop out of the panel. */
+  private branchTargetUuid: string | null = null;
   /** True while the user has manually scrolled the panel list; auto-centering
    *  pauses until the chat's current message changes again. */
   private userScrolledPanel = false;
@@ -305,8 +306,15 @@ export class TreePanelFeature implements Feature {
       this.render();
     });
     ctx.bus.on("tree-updated", () => this.render());
+    ctx.bus.on("branch-mode-changed", (msg) => {
+      if (msg.conversationUuid !== ctx.getCurrentConversation()) return;
+      this.branchTargetUuid = msg.targetUuid;
+      this.lastSignature = "";
+      this.render();
+    });
     ctx.bus.on("conversation-changed", () => {
       this.glideId++; // abort any glide targeting the old conversation
+      this.branchTargetUuid = null;
       this.expandedBranches.clear();
       this.drawerItems = [];
       this.deletedItems = [];
@@ -394,9 +402,9 @@ export class TreePanelFeature implements Feature {
    * touches scrollTop/scrollHeight, which spacers make unreliable. If the
    * conversation's true last message is fully inside the viewport, it is
    * current (the user is caught up at the end); symmetrically for the
-   * first message; otherwise it's the last row starting above the viewport
-   * center (monotonic in scroll position, so it never flickers between
-   * neighbors).
+   * first message; otherwise it's the message at the TOP of the viewport —
+   * the reading position. (A center rule let small messages pass through
+   * undetected in groups; every message crosses the top edge one by one.)
    */
   private trackCurrentMessage(scRect: DOMRect): void {
     const tree = this.ctx.getTree();
@@ -424,10 +432,12 @@ export class TreePanelFeature implements Feature {
     ) {
       uuid = firstRow.uuid;
     } else {
-      const centerY = scRect.top + scRect.height / 2;
+      // the last row whose top is at/above the top edge (small margin so a
+      // message flush with the edge still counts) — monotonic in scroll
+      const topY = scRect.top + 80;
       let best: string | null = firstRow.uuid;
       for (const row of rows) {
-        if (row.el.getBoundingClientRect().top > centerY) break;
+        if (row.el.getBoundingClientRect().top > topY) break;
         best = row.uuid;
       }
       uuid = best;
@@ -517,13 +527,23 @@ export class TreePanelFeature implements Feature {
     const panel = shadow.querySelector<HTMLElement>(".panel")!;
     const tree = this.ctx.getTree();
     const path = tree ? tree.visiblePath() : [];
-    const pairs = this.buildPairs(path);
+    let pairs = this.buildPairs(path);
+    // Branch mode ghosts a message and hides everything after it in the
+    // chat — the panel mirrors that: entries below the branch point drop out.
+    if (this.branchTargetUuid) {
+      const idx = pairs.findIndex(
+        (p) =>
+          p.prompt.uuid === this.branchTargetUuid || p.response?.uuid === this.branchTargetUuid
+      );
+      if (idx >= 0) pairs = pairs.slice(0, idx + 1);
+    }
     const strip = this.mode === "strip";
 
     const signature = JSON.stringify({
       m: this.mode,
       f: this.fullFits,
       c: this.currentViewUuid,
+      b: this.branchTargetUuid,
       d: this.drawerItems,
       dd: this.deletedItems,
       x: [...this.expandedBranches],
@@ -819,6 +839,11 @@ export class TreePanelFeature implements Feature {
       const nextFrame = () => new Promise<number>((r) => requestAnimationFrame(r));
       let stalledFrames = 0;
       let lastScrollHeight = -1;
+      let closeFrames = 0;
+
+      // the site may smooth-scroll this container via CSS; our per-frame
+      // stepping must apply instantly or the two animations fight (jitter)
+      sc.style.scrollBehavior = "auto";
 
       while (!cancelled && id === this.glideId && sc.isConnected) {
         this.ctx.domMap.rebuild(tree);
@@ -832,6 +857,16 @@ export class TreePanelFeature implements Feature {
           remaining =
             row.el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 24;
           if (Math.abs(remaining) < 2) {
+            this.pulse(row);
+            return;
+          }
+          // Virtualized layout can keep nudging the target by a few dozen
+          // pixels as rows mount around it — once we've hovered near the
+          // target for several frames, snap and stop instead of chasing the
+          // shifts up and down forever.
+          closeFrames = Math.abs(remaining) < 64 ? closeFrames + 1 : 0;
+          if (closeFrames > 10) {
+            sc.scrollTop += remaining;
             this.pulse(row);
             return;
           }
@@ -869,6 +904,7 @@ export class TreePanelFeature implements Feature {
         await nextFrame();
       }
     } finally {
+      sc.style.scrollBehavior = "";
       window.removeEventListener("wheel", onInput, opts);
       window.removeEventListener("touchstart", onInput, opts);
       window.removeEventListener("mousedown", onInput, opts);
