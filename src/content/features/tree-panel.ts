@@ -111,7 +111,7 @@ const PANEL_CSS = `
   .list {
     flex: 1;
     overflow-y: auto; overflow-x: hidden;
-    padding: 0 12px 0 12px;
+    padding: 0 12px 14px 12px;
     scrollbar-width: thin;
     scrollbar-color: ${cssVar("--always-black", 0.35)} transparent;
     /* entries dissolve at the scroll edges instead of clipping */
@@ -125,12 +125,9 @@ const PANEL_CSS = `
   .list::-webkit-scrollbar-track { background: transparent; }
   .list::-webkit-scrollbar-thumb { background: ${cssVar("--always-black", 0.35)}; border-radius: 3px; }
   .list::-webkit-scrollbar-thumb:hover { background: ${cssVar("--always-black", 0.55)}; }
-  /* breathing room so entries at the very start/end can still be centered */
-  .list::before, .list::after {
-    content: ""; display: block;
-    height: max(14px, calc(50% - 30px));
-  }
-  .panel.strip .list { padding: 2px 0; }
+  /* small top inset so the first entry clears the fade */
+  .list::before { content: ""; display: block; height: 14px; }
+  .panel.strip .list { padding: 2px 0 10px; }
 
   /* ------------------------------------------------- branch-point header */
   .hdr {
@@ -283,9 +280,6 @@ export class TreePanelFeature implements Feature {
   private deletedItems: Array<{ noteId: string; label: string }> = [];
   /** Prompt uuid of the pair currently in view in the chat. */
   private currentViewUuid: string | null = null;
-  /** Prompt uuid of the pair under the pointer — wins over the scroll pick. */
-  private hoveredViewUuid: string | null = null;
-  private lastHoverTarget: Element | null = null;
   /** Branch-compose target: entries below it drop out of the panel. */
   private branchTargetUuid: string | null = null;
   /** True while the user has manually scrolled the panel list; auto-centering
@@ -309,21 +303,6 @@ export class TreePanelFeature implements Feature {
       this.render();
     });
     ctx.bus.on("tree-updated", () => this.render());
-    // hovering a chat message highlights its entry (over the scroll pick)
-    const onHover = rafThrottle(() => this.updateHovered());
-    document.addEventListener(
-      "mousemove",
-      (ev) => {
-        if (!this.enabled) return;
-        this.lastHoverTarget = ev.target instanceof Element ? ev.target : null;
-        onHover();
-      },
-      { passive: true }
-    );
-    document.addEventListener("mouseleave", () => {
-      this.lastHoverTarget = null;
-      this.updateHovered();
-    });
     ctx.bus.on("branch-mode-changed", (msg) => {
       if (msg.conversationUuid !== ctx.getCurrentConversation()) return;
       this.branchTargetUuid = msg.targetUuid;
@@ -333,8 +312,6 @@ export class TreePanelFeature implements Feature {
     ctx.bus.on("conversation-changed", () => {
       this.glideId++; // abort any glide targeting the old conversation
       this.branchTargetUuid = null;
-      this.hoveredViewUuid = null;
-      this.lastHoverTarget = null;
       this.expandedBranches.clear();
       this.drawerItems = [];
       this.deletedItems = [];
@@ -436,12 +413,19 @@ export class TreePanelFeature implements Feature {
 
     let uuid: string | null;
     const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8;
+    const atTop = sc.scrollTop <= 8;
+    const firstMeasurable = rows.find((r) => r.el.getBoundingClientRect().height > 0);
     if (
       atBottom &&
       lastRow.uuid === path[path.length - 1]?.uuid &&
       lastRow.el.getBoundingClientRect().bottom <= scRect.bottom + 8
     ) {
       uuid = lastRow.uuid;
+    } else if (atTop && firstMeasurable && firstMeasurable.uuid === path[0]?.uuid) {
+      // parked at the very top with the true first message mounted: it is
+      // current, full stop — the +80px reading margin below must not let a
+      // short first message lose to the second one at scroll 0
+      uuid = firstMeasurable.uuid;
     } else {
       // the last row whose top sits at/above the top edge (+80px margin so
       // a message flush with the edge counts) — monotonic in scroll.
@@ -470,30 +454,6 @@ export class TreePanelFeature implements Feature {
     if (uuid !== this.currentViewUuid) {
       this.currentViewUuid = uuid;
       this.userScrolledPanel = false; // the chat moved: resume auto-centering
-      this.lastSignature = "";
-      this.render();
-    }
-  }
-
-  /** Resolves the pointer's chat row (if any) to its pair's prompt uuid. */
-  private updateHovered(): void {
-    const tree = this.ctx.getTree();
-    const target = this.lastHoverTarget;
-    let uuid: string | null = null;
-    if (tree && target?.isConnected) {
-      const row = this.ctx.domMap.rowForElement(target);
-      if (row?.uuid) {
-        uuid = row.uuid;
-        const node = tree.nodes.get(uuid);
-        if (node?.sender === "assistant") {
-          const parent = tree.nodes.get(node.parentUuid);
-          if (parent && !parent.isNote) uuid = parent.uuid;
-        }
-        if (node?.isNote) uuid = null;
-      }
-    }
-    if (uuid !== this.hoveredViewUuid) {
-      this.hoveredViewUuid = uuid;
       this.lastSignature = "";
       this.render();
     }
@@ -583,7 +543,6 @@ export class TreePanelFeature implements Feature {
       m: this.mode,
       f: this.fullFits,
       c: this.currentViewUuid,
-      h: this.hoveredViewUuid,
       b: this.branchTargetUuid,
       d: this.drawerItems,
       dd: this.deletedItems,
@@ -658,8 +617,8 @@ export class TreePanelFeature implements Feature {
       if (!this.userScrolledPanel && this.currentViewUuid) {
         const entry = list.querySelector<HTMLElement>(`[data-uuid="${this.currentViewUuid}"]`);
         // offsets share the panel as offsetParent; the difference is the
-        // entry's position inside the list content (edge pads included, so
-        // first/last entries have room to actually reach the center)
+        // entry's position inside the list content. Entries near the ends
+        // simply clamp against the scroll limits (no artificial padding).
         if (entry)
           list.scrollTop =
             entry.offsetTop - list.offsetTop - list.clientHeight / 2 + entry.offsetHeight / 2;
@@ -710,7 +669,7 @@ export class TreePanelFeature implements Feature {
   }
 
   private currentClass(uuid: string): string {
-    return uuid === (this.hoveredViewUuid ?? this.currentViewUuid) ? " current" : "";
+    return uuid === this.currentViewUuid ? " current" : "";
   }
 
   private renderHeaderRow(node: TreeNode): string {

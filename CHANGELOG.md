@@ -2,6 +2,20 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.11.1 — 2026-07-16
+
+### Prompt history panel
+
+- **Hover detection removed** — the highlight follows scroll position only
+  (the 0.11.0 hover behavior is reverted).
+- **Scroll position 0 always registers the first message** (when it is
+  mounted): the +80px reading margin let a short first message lose to the
+  second one even at the very top of the scroll.
+- **Edge centering reverted**: no more artificial breathing room above and
+  below the list — entries near the start/end clamp against the scroll
+  limits as they originally did (a small 14px inset keeps the first entry
+  clear of the fade).
+
 ## 0.11.0 — 2026-07-16
 
 ### Prompt history panel
