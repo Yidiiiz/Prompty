@@ -2,6 +2,31 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.11.0 — 2026-07-16
+
+### Prompt history panel
+
+- **Hovering a chat message highlights its entry** in the panel; the
+  highlight returns to the scroll position's message when the pointer
+  leaves.
+- **"Caught up at the end" now requires actually being at the end**: the
+  last message is only pinned as current when the scroll is parked at the
+  very bottom. Before, mere visibility of the last message was enough — in
+  short chats that is almost always true, so the highlight never followed
+  the message at the top of the screen.
+- **Zero-height rows can't win the top-of-viewport rule**: virtualizer
+  placeholders and hidden rows measure 0×0 at the viewport origin and were
+  registering as the current message at the top of long chats.
+
+### Drafts
+
+- **The autosaved banner survives reload**: the app restores its own copy of
+  the composer text on load through editor machinery that can fire
+  synthetic input events — those counted as "typing", which dismissed the
+  banner immediately (and could clear or rewrite the stored draft
+  mid-initialization). Only trusted (real-keyboard) input dismisses the
+  offer and triggers autosave now.
+
 ## 0.10.0 — 2026-07-16
 
 ### Prompt history panel

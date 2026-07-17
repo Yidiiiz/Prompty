@@ -156,8 +156,14 @@ export class DraftsFeature implements Feature {
     const composer = getComposerEl();
     if (composer && !this.composerListenerAttached.has(composer)) {
       this.composerListenerAttached.add(composer);
-      composer.addEventListener("input", () => {
+      composer.addEventListener("input", (ev) => {
         if (!this.enabled) return;
+        // Only REAL typing counts: the app restores its own draft into the
+        // composer on load through editor machinery that can fire synthetic
+        // input events, and those must neither dismiss the restore offer
+        // (the banner vanished right after reload) nor rewrite/clear the
+        // stored draft mid-initialization.
+        if (!ev.isTrusted) return;
         // typing overwrites the stored draft, so the restore offer is stale
         this.removeBanner();
         this.saveMain();

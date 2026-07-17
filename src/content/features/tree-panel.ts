@@ -283,6 +283,9 @@ export class TreePanelFeature implements Feature {
   private deletedItems: Array<{ noteId: string; label: string }> = [];
   /** Prompt uuid of the pair currently in view in the chat. */
   private currentViewUuid: string | null = null;
+  /** Prompt uuid of the pair under the pointer — wins over the scroll pick. */
+  private hoveredViewUuid: string | null = null;
+  private lastHoverTarget: Element | null = null;
   /** Branch-compose target: entries below it drop out of the panel. */
   private branchTargetUuid: string | null = null;
   /** True while the user has manually scrolled the panel list; auto-centering
@@ -306,6 +309,21 @@ export class TreePanelFeature implements Feature {
       this.render();
     });
     ctx.bus.on("tree-updated", () => this.render());
+    // hovering a chat message highlights its entry (over the scroll pick)
+    const onHover = rafThrottle(() => this.updateHovered());
+    document.addEventListener(
+      "mousemove",
+      (ev) => {
+        if (!this.enabled) return;
+        this.lastHoverTarget = ev.target instanceof Element ? ev.target : null;
+        onHover();
+      },
+      { passive: true }
+    );
+    document.addEventListener("mouseleave", () => {
+      this.lastHoverTarget = null;
+      this.updateHovered();
+    });
     ctx.bus.on("branch-mode-changed", (msg) => {
       if (msg.conversationUuid !== ctx.getCurrentConversation()) return;
       this.branchTargetUuid = msg.targetUuid;
@@ -315,6 +333,8 @@ export class TreePanelFeature implements Feature {
     ctx.bus.on("conversation-changed", () => {
       this.glideId++; // abort any glide targeting the old conversation
       this.branchTargetUuid = null;
+      this.hoveredViewUuid = null;
+      this.lastHoverTarget = null;
       this.expandedBranches.clear();
       this.drawerItems = [];
       this.deletedItems = [];
@@ -383,7 +403,7 @@ export class TreePanelFeature implements Feature {
     const height = `${Math.max(160, window.innerHeight - top)}px`;
 
     // read phase: which pair is currently in view in the chat?
-    this.trackCurrentMessage(scRect);
+    this.trackCurrentMessage(sc, scRect);
 
     // write phase (guarded)
     this.setMode(panel, mode);
@@ -395,49 +415,45 @@ export class TreePanelFeature implements Feature {
   }
 
   /**
-   * The "current" pair is decided from each row's LIVE on-screen rect
-   * compared against the scroll viewport's rect — one coordinate space on
-   * both sides, so it is correct no matter how the virtualizer positions
-   * rows (static flow, absolute offsets, or transforms), and it never
-   * touches scrollTop/scrollHeight, which spacers make unreliable. If the
-   * conversation's true last message is fully inside the viewport, it is
-   * current (the user is caught up at the end); symmetrically for the
-   * first message; otherwise it's the message at the TOP of the viewport —
-   * the reading position. (A center rule let small messages pass through
-   * undetected in groups; every message crosses the top edge one by one.)
+   * The "current" pair is the message at the TOP of the viewport — the
+   * reading position — decided from live on-screen rects (one coordinate
+   * space on both sides, correct however the virtualizer positions rows).
+   * One exception: parked at the very BOTTOM of the scroll with the true
+   * last message on screen, the user is caught up and the last message is
+   * current. Mere visibility of the last message is NOT enough for that —
+   * in short chats it is almost always visible, which used to pin the
+   * highlight to it no matter what was actually at the top.
    */
-  private trackCurrentMessage(scRect: DOMRect): void {
+  private trackCurrentMessage(sc: HTMLElement, scRect: DOMRect): void {
     const tree = this.ctx.getTree();
     if (!tree) return;
     const rows = this.ctx.domMap.rows.filter(
       (r) => r.uuid && !r.el.classList.contains("pt-note-hidden")
     );
     if (!rows.length) return;
-
-    // Bottom/top pinning only applies when the mounted edge row IS the
-    // path's real end/start (virtualization can leave either unmounted).
     const path = tree.visiblePath();
-    const firstRow = rows[0]!;
     const lastRow = rows[rows.length - 1]!;
 
     let uuid: string | null;
+    const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 8;
     if (
+      atBottom &&
       lastRow.uuid === path[path.length - 1]?.uuid &&
       lastRow.el.getBoundingClientRect().bottom <= scRect.bottom + 8
     ) {
       uuid = lastRow.uuid;
-    } else if (
-      firstRow.uuid === path[0]?.uuid &&
-      firstRow.el.getBoundingClientRect().top >= scRect.top - 8
-    ) {
-      uuid = firstRow.uuid;
     } else {
-      // the last row whose top is at/above the top edge (small margin so a
-      // message flush with the edge still counts) — monotonic in scroll
+      // the last row whose top sits at/above the top edge (+80px margin so
+      // a message flush with the edge counts) — monotonic in scroll.
+      // Zero-height rows (virtualizer placeholders, hidden rows) measure at
+      // the viewport origin and must never win.
       const topY = scRect.top + 80;
-      let best: string | null = firstRow.uuid;
+      let best: string | null = null;
       for (const row of rows) {
-        if (row.el.getBoundingClientRect().top > topY) break;
+        const rect = row.el.getBoundingClientRect();
+        if (rect.height <= 0) continue;
+        if (best === null) best = row.uuid; // first measurable row fallback
+        if (rect.top > topY) break;
         best = row.uuid;
       }
       uuid = best;
@@ -454,6 +470,30 @@ export class TreePanelFeature implements Feature {
     if (uuid !== this.currentViewUuid) {
       this.currentViewUuid = uuid;
       this.userScrolledPanel = false; // the chat moved: resume auto-centering
+      this.lastSignature = "";
+      this.render();
+    }
+  }
+
+  /** Resolves the pointer's chat row (if any) to its pair's prompt uuid. */
+  private updateHovered(): void {
+    const tree = this.ctx.getTree();
+    const target = this.lastHoverTarget;
+    let uuid: string | null = null;
+    if (tree && target?.isConnected) {
+      const row = this.ctx.domMap.rowForElement(target);
+      if (row?.uuid) {
+        uuid = row.uuid;
+        const node = tree.nodes.get(uuid);
+        if (node?.sender === "assistant") {
+          const parent = tree.nodes.get(node.parentUuid);
+          if (parent && !parent.isNote) uuid = parent.uuid;
+        }
+        if (node?.isNote) uuid = null;
+      }
+    }
+    if (uuid !== this.hoveredViewUuid) {
+      this.hoveredViewUuid = uuid;
       this.lastSignature = "";
       this.render();
     }
@@ -543,6 +583,7 @@ export class TreePanelFeature implements Feature {
       m: this.mode,
       f: this.fullFits,
       c: this.currentViewUuid,
+      h: this.hoveredViewUuid,
       b: this.branchTargetUuid,
       d: this.drawerItems,
       dd: this.deletedItems,
@@ -669,7 +710,7 @@ export class TreePanelFeature implements Feature {
   }
 
   private currentClass(uuid: string): string {
-    return uuid === this.currentViewUuid ? " current" : "";
+    return uuid === (this.hoveredViewUuid ?? this.currentViewUuid) ? " current" : "";
   }
 
   private renderHeaderRow(node: TreeNode): string {
