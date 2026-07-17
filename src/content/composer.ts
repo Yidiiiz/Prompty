@@ -70,6 +70,27 @@ export function placeAboveComposer(host: HTMLElement, zIndex: number, liftPx = 0
   if (style.visibility !== "visible") style.visibility = "visible";
 }
 
+/**
+ * Empties the composer through the editor's own pipeline (select-all +
+ * delete). Needed because the site restores composer text across reloads on
+ * its own — discarding a draft must also discard that visible copy.
+ */
+export function clearComposerText(): boolean {
+  const el = getComposerEl();
+  if (!el) return false;
+  el.focus();
+  try {
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    return document.execCommand("delete");
+  } catch {
+    return false;
+  }
+}
+
 /** Replaces the composer's content with `text`. Returns success. */
 export function setComposerText(text: string): boolean {
   const el = getComposerEl();

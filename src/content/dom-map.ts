@@ -141,14 +141,23 @@ export class DomMap {
       while (el && el.parentElement !== container) el = el.parentElement;
       if (el) rowSet.add(el);
     }
-    // VISUAL order, not DOM order: virtualizers may recycle row elements
-    // and re-append them out of sequence, so container.children is not
-    // guaranteed to match the on-screen order that alignment depends on.
-    const ordered = [...container.children]
-      .filter((c): c is HTMLElement => rowSet.has(c as HTMLElement))
-      .map((el) => ({ el, top: el.getBoundingClientRect().top }))
-      .sort((a, b) => a.top - b.top)
-      .map((x) => x.el);
+    // VISUAL order when it disagrees with DOM order: virtualizers may
+    // recycle row elements and re-append them out of sequence. But hidden
+    // rows (branch preview's pt-branch-hidden, note pairs' pt-note-hidden —
+    // display:none) measure 0×0 at the viewport origin, so unconditionally
+    // sorting by rect hoisted them all to the front and scrambled the map
+    // every tick (branch mode flickered). DOM order is kept unless the
+    // MEASURABLE rows are genuinely out of visual order.
+    const ordered = [...container.children].filter((c): c is HTMLElement =>
+      rowSet.has(c as HTMLElement)
+    );
+    const rects = new Map<HTMLElement, DOMRect>();
+    for (const el of ordered) rects.set(el, el.getBoundingClientRect());
+    const visible = ordered.filter((el) => rects.get(el)!.height > 0);
+    const outOfOrder = visible.some(
+      (el, i) => i > 0 && rects.get(el)!.top < rects.get(visible[i - 1]!)!.top
+    );
+    if (outOfOrder) ordered.sort((a, b) => rects.get(a)!.top - rects.get(b)!.top);
 
     const domRows: DomRow[] = ordered.map((el) => ({
       el,

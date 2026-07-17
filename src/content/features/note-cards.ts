@@ -92,8 +92,6 @@ interface ComposerState {
   kind: "note" | "comment";
   anchor: GutterAnchor;
   quoteDisplay: string | null;
-  /** Set when this composer continues an existing card's thread. */
-  followUpOf: NoteRecord | null;
   el: HTMLElement;
 }
 
@@ -275,6 +273,8 @@ export class NoteCardManager {
       layer.appendChild(created);
       this.entryButtons.set(kind, created);
       btn = created;
+      // mount invisible at the right spot, then fade in next frame
+      requestAnimationFrame(() => created.classList.add("show"));
     }
     // never overlap the native selection popover: it steals clicks
     let y = viewportY;
@@ -294,8 +294,13 @@ export class NoteCardManager {
   }
 
   hideEntryButton(kind: "note" | "comment"): void {
-    this.entryButtons.get(kind)?.remove();
+    const btn = this.entryButtons.get(kind);
+    if (!btn) return;
     this.entryButtons.delete(kind);
+    // fade out, then remove; clicks must die the moment hiding starts
+    btn.classList.remove("show");
+    btn.style.pointerEvents = "none";
+    setTimeout(() => btn.remove(), 200);
   }
 
   /* ------------------------------------------------------------ composer */
@@ -304,8 +309,7 @@ export class NoteCardManager {
     kind: "note" | "comment",
     anchor: GutterAnchor,
     quoteDisplay: string | null,
-    initialText = "",
-    followUpOf: NoteRecord | null = null
+    initialText = ""
   ): void {
     if (!this.kinds[kind]) return;
     const layer = this.ensureGutter();
@@ -350,14 +354,13 @@ export class NoteCardManager {
       // seamless — the card mounts in the same frame the composer closes
       const topPx = this.composer?.el.style.top ?? "";
       this.closeComposer();
-      if (followUpOf) this.submitFollowUp(followUpOf, text);
-      else this.submitNote(kind, anchor, text, topPx);
+      this.submitNote(kind, anchor, text, topPx);
     };
     el.querySelector<HTMLButtonElement>("button.primary")!.addEventListener("click", submit);
     el.querySelector<HTMLButtonElement>("button.ghost")!.addEventListener("click", () => this.closeComposer());
     // Position at the anchor BEFORE inserting and focus without scrolling —
     // focusing an unpositioned (top: 0) element would yank the page to the top.
-    this.composer = { kind, anchor, quoteDisplay, followUpOf, el };
+    this.composer = { kind, anchor, quoteDisplay, el };
     const y = this.resolveComposerY();
     if (y !== null) el.style.top = `${Math.max(0, Math.round(y))}px`;
     layer.appendChild(el);
@@ -472,9 +475,27 @@ export class NoteCardManager {
     });
   }
 
-  /** Opens the composer to continue an existing card's thread. */
-  private openFollowUpComposer(record: NoteRecord): void {
-    this.openComposer(record.kind, record as GutterAnchor & NoteRecord, record.quote ?? null, "", record);
+  /** "Continue" opens an ask box INSIDE the card, so the thread visibly
+   *  extends in place — nothing that reads as a new note ever appears. */
+  private openInlineFollowUp(el: HTMLElement, record: NoteRecord): void {
+    const box = el.querySelector<HTMLElement>(".fucomp")!;
+    const textarea = box.querySelector("textarea")!;
+    if (box.style.display !== "block") {
+      box.style.display = "block";
+      const cont = el.querySelector<HTMLElement>(".cont");
+      if (cont) cont.style.display = "none";
+      textarea.value = "";
+      requestTick(); // the card grew: re-run collision layout
+    }
+    textarea.focus({ preventScroll: true });
+  }
+
+  private closeInlineFollowUp(el: HTMLElement): void {
+    const box = el.querySelector<HTMLElement>(".fucomp");
+    if (box) box.style.display = "none";
+    const cont = el.querySelector<HTMLElement>(".cont");
+    if (cont) cont.style.display = "";
+    requestTick();
   }
 
   /** Surrounding ~200 chars of the anchor message's text, in place of a quote. */
@@ -784,6 +805,13 @@ export class NoteCardManager {
       <div class="quote"></div>
       <div class="moved">anchor moved</div>
       <div class="thread"></div>
+      <div class="fucomp">
+        <textarea rows="2" placeholder="Continue this thread…"></textarea>
+        <div class="fufoot">
+          <button class="primary" type="button">Ask</button>
+          <button class="ghost" type="button">Cancel</button>
+        </div>
+      </div>
       <div class="foot">
         <span class="status"></span>
         <button class="cont" type="button" title="Ask a follow-up in this note">Continue</button>
@@ -795,8 +823,24 @@ export class NoteCardManager {
       : record.kind === "comment"
         ? "Comment"
         : "Note";
+    const fucomp = el.querySelector<HTMLElement>(".fucomp")!;
+    const fuText = fucomp.querySelector("textarea")!;
+    const fuSubmit = () => {
+      const text = fuText.value.trim();
+      if (!text) return;
+      this.closeInlineFollowUp(el);
+      this.submitFollowUp(record, text);
+    };
+    fuText.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") this.closeInlineFollowUp(el);
+      if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) fuSubmit();
+    });
+    fucomp.querySelector<HTMLButtonElement>("button.primary")!.addEventListener("click", fuSubmit);
+    fucomp
+      .querySelector<HTMLButtonElement>("button.ghost")!
+      .addEventListener("click", () => this.closeInlineFollowUp(el));
     el.querySelector<HTMLButtonElement>(".cont")!.addEventListener("click", () =>
-      this.openFollowUpComposer(record)
+      this.openInlineFollowUp(el, record)
     );
     el.querySelector<HTMLButtonElement>(".expand")!.addEventListener("click", () =>
       this.openModal(record.noteId)
@@ -843,7 +887,8 @@ export class NoteCardManager {
     if (statusEl.classList.contains("busy") !== busy) statusEl.classList.toggle("busy", busy);
     const contBtn = el.querySelector<HTMLElement>(".cont");
     if (contBtn) {
-      const display = busy || last.status === "missing" ? "none" : "";
+      const fuOpen = el.querySelector<HTMLElement>(".fucomp")?.style.display === "block";
+      const display = busy || last.status === "missing" || fuOpen ? "none" : "";
       if (contBtn.style.display !== display) contBtn.style.display = display;
     }
 
@@ -972,6 +1017,8 @@ const CARD_BASE_CSS = `
   .card .a pre { background: ${cssVar("--bg-200")}; border-radius: ${UI.radiusSm}; padding: 7px 8px; overflow-x: auto; }
   .card .a code { font-family: ${FONT_MONO}; font-size: 11px; }
   .card .a a { color: ${cssVar("--accent-secondary-100")}; }
+  .card .fucomp { display: none; margin-top: 7px; }
+  .card .fufoot { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   .card .foot { display: flex; align-items: center; gap: 4px; margin-top: 7px; }
   .card .status { flex: 1; font-size: 10.5px; color: ${cssVar("--text-400")}; font-style: italic; }
   .card .status.busy::after {
@@ -1009,21 +1056,21 @@ const CARD_BASE_CSS = `
   }
   .card textarea::placeholder { color: ${cssVar("--text-500")}; }
   .card textarea:focus { border-color: ${cssVar("--accent-main-100")}; }
-  .card .foot .primary {
+  .card .primary {
     border: none; cursor: pointer; border-radius: ${UI.radiusSm}; padding: 5px 14px;
     background: ${cssVar("--accent-main-100")}; color: ${cssVar("--oncolor-100")};
     font-family: inherit; font-size: 12px; font-weight: 500;
     transition: background ${UI.transition}, transform ${UI.transition};
   }
-  .card .foot .primary:hover { background: ${cssVar("--accent-main-200")}; }
-  .card .foot .primary:active { transform: scale(0.98); }
-  .card .foot .ghost {
+  .card .primary:hover { background: ${cssVar("--accent-main-200")}; }
+  .card .primary:active { transform: scale(0.98); }
+  .card .ghost {
     border: 1px solid ${cssVar("--border-200", 0.4)}; background: none; cursor: pointer;
     border-radius: ${UI.radiusSm}; padding: 4px 12px; color: ${cssVar("--text-400")};
     font-family: inherit; font-size: 12px;
     transition: background ${UI.transition}, color ${UI.transition};
   }
-  .card .foot .ghost:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
+  .card .ghost:hover { background: ${cssVar("--bg-300")}; color: ${cssVar("--text-100")}; }
 `;
 
 const GUTTER_CSS = `
@@ -1044,10 +1091,13 @@ const GUTTER_CSS = `
     /* symmetric shadow — a round button with an offset shadow reads off-center */
     box-shadow: 0 0 0 0.5px ${cssVar("--border-300", 0.3)}, 0 0 6px ${cssVar("--always-black", 0.1)};
     z-index: 5;
-    transition: background ${UI.transition}, color ${UI.transition}, transform ${UI.transition}, box-shadow ${UI.transition};
+    opacity: 0;
+    transition: background ${UI.transition}, color ${UI.transition}, transform ${UI.transition},
+      box-shadow ${UI.transition}, opacity 150ms ease, top 120ms ease;
   }
-  /* generous invisible hit area — the pointer travels from the text */
-  .entry::after { content: ""; position: absolute; inset: -10px; border-radius: 50%; }
+  .entry.show { opacity: 1; }
+  /* modest invisible hit area — just enough to not slip off the button */
+  .entry::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; }
   .entry:hover {
     background: ${cssVar("--bg-200")};
     color: ${cssVar("--text-100")};

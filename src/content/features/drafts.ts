@@ -43,6 +43,7 @@ import { subscribe } from "../observer";
 import { toastOnce } from "../toast";
 import {
   attachFilesToComposer,
+  clearComposerText,
   getComposerDock,
   getComposerEl,
   getComposerText,
@@ -332,6 +333,11 @@ export class DraftsFeature implements Feature {
     shadow.querySelector(".clear")!.addEventListener("click", () => {
       void clearDraft(draft.conversationUuid);
       this.sessionFiles.delete(draft.conversationUuid);
+      // The site restores composer text across reloads by itself, so the
+      // draft text is usually ALREADY sitting in the box — "Clear" must
+      // discard that visible copy too, or it looks like it did nothing.
+      // Only when it matches the draft: never destroy unrelated typing.
+      if (getComposerText() === draft.text) clearComposerText();
       this.removeBanner();
     });
     this.bannerHost = host;

@@ -111,15 +111,27 @@ const PANEL_CSS = `
   .list {
     flex: 1;
     overflow-y: auto; overflow-x: hidden;
-    padding: 0 12px 14px 12px;
+    padding: 0 12px 0 12px;
     scrollbar-width: thin;
-    scrollbar-color: ${cssVar("--border-200", 0.35)} transparent;
+    scrollbar-color: transparent transparent;
+    /* entries dissolve at the scroll edges instead of clipping */
+    -webkit-mask-image: linear-gradient(to bottom,
+      transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to bottom,
+      transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
   }
+  /* scrollbar stays invisible until the pointer is over the list, then faint */
   .list::-webkit-scrollbar { width: 4px; }
   .list::-webkit-scrollbar-track { background: transparent; }
-  .list::-webkit-scrollbar-thumb { background: ${cssVar("--border-200", 0.35)}; border-radius: 2px; }
-  .list::-webkit-scrollbar-thumb:hover { background: ${cssVar("--border-200", 0.6)}; }
-  .panel.strip .list { padding: 2px 0 10px; }
+  .list::-webkit-scrollbar-thumb { background: transparent; border-radius: 2px; }
+  .list:hover { scrollbar-color: ${cssVar("--border-200", 0.25)} transparent; }
+  .list:hover::-webkit-scrollbar-thumb { background: ${cssVar("--border-200", 0.25)}; }
+  /* breathing room so entries at the very start/end can still be centered */
+  .list::before, .list::after {
+    content: ""; display: block;
+    height: max(14px, calc(50% - 30px));
+  }
+  .panel.strip .list { padding: 2px 0; }
 
   /* ------------------------------------------------- branch-point header */
   .hdr {
@@ -584,7 +596,12 @@ export class TreePanelFeature implements Feature {
       this.panelScrollGuard = true;
       if (!this.userScrolledPanel && this.currentViewUuid) {
         const entry = list.querySelector<HTMLElement>(`[data-uuid="${this.currentViewUuid}"]`);
-        if (entry) list.scrollTop = entry.offsetTop - list.clientHeight / 2 + entry.offsetHeight / 2;
+        // offsets share the panel as offsetParent; the difference is the
+        // entry's position inside the list content (edge pads included, so
+        // first/last entries have room to actually reach the center)
+        if (entry)
+          list.scrollTop =
+            entry.offsetTop - list.offsetTop - list.clientHeight / 2 + entry.offsetHeight / 2;
       } else {
         // rebuilding innerHTML reset the list; keep the user's position
         list.scrollTop = prevScrollTop;

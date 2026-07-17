@@ -2,6 +2,48 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.9.0 — 2026-07-16
+
+### Prompt history panel
+
+- **Near-invisible scrollbar**: the list's scrollbar is transparent until the
+  pointer is over the panel, then a faint 4px thumb.
+- **Entries dissolve at the scroll edges**: a soft fade masks the top and
+  bottom 28px of the list instead of a hard clip.
+- **Every message can be centered**: the list gains breathing room above and
+  below its entries, so auto-centering now also centers the first and last
+  messages instead of stopping at the scroll limits (and the center math no
+  longer carries the header's height as an offset).
+
+### Branch compose
+
+- **Fixed the flashing after "Branch from here"**: 0.8.4's visual-order row
+  sort measured the branch preview's hidden rows as 0×0 at the viewport
+  origin and hoisted them to the front of the map, scrambling row↔message
+  attribution every tick — the chat flickered between showing and hiding the
+  messages below the branch point and the panel flashed with it. DOM order
+  is now kept unless the measurable rows are genuinely out of visual order.
+
+### Drafts
+
+- **Clear now visibly clears**: the site restores composer text across
+  reloads by itself, so clearing the stored draft still left the text
+  sitting in the prompt box. Clear now also empties the composer when its
+  content matches the draft (never when it differs — unrelated typing is
+  safe).
+
+### Notes & comments
+
+- **The margin "+" button snaps to the hovered text line** (caret-rect
+  based), fades in and out instead of popping, glides between lines, and
+  the invisible hover zone that keeps it alive is much tighter — both
+  around the button itself and in the corridor to the right of the text.
+- **Continue happens inside the card**: the follow-up ask box now opens
+  within the existing note/comment card (Ask / Cancel / Esc /
+  Ctrl+Enter), extending the thread in place — no separate composer card
+  that looked like a brand-new note. The underlying send is still a hidden
+  in-thread pair tied to the same card, as before.
+
 ## 0.8.4 — 2026-07-16
 
 ### Prompt history panel
