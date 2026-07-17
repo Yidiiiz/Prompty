@@ -2,6 +2,29 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.8.4 — 2026-07-16
+
+### Prompt history panel
+
+- **Jumps move relative to the current scroll position, never to a computed
+  target**: each frame the glide re-measures the on-screen gap between the
+  message and the viewport top (live rects, one coordinate space) and moves
+  by a fraction of that gap. Absolute layout offsets (0.8.2) turned out to
+  be exactly the "assumed positions" a virtualizer invalidates when it
+  repositions rows — they made jumps land the wrong distance away.
+- **Current-message tracking back on live on-screen rects**, compared
+  against the viewport rect: correct regardless of how rows are positioned
+  (static flow, absolute offsets, or transforms).
+
+### DOM ↔ model mapping
+
+- **Rows are ordered by on-screen position, not DOM order** — virtualizers
+  may recycle row elements out of sequence.
+- **Text anchoring is best-score, not all-or-nothing**: one row mounting
+  with half-rendered text no longer throws the window anchor back to the
+  start of the chat for a tick, which made the panel highlight snap far up
+  and back down while scrolling in one direction.
+
 ## 0.8.3 — 2026-07-16
 
 ### DOM ↔ model mapping

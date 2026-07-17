@@ -141,9 +141,14 @@ export class DomMap {
       while (el && el.parentElement !== container) el = el.parentElement;
       if (el) rowSet.add(el);
     }
-    const ordered = [...container.children].filter((c): c is HTMLElement =>
-      rowSet.has(c as HTMLElement)
-    );
+    // VISUAL order, not DOM order: virtualizers may recycle row elements
+    // and re-append them out of sequence, so container.children is not
+    // guaranteed to match the on-screen order that alignment depends on.
+    const ordered = [...container.children]
+      .filter((c): c is HTMLElement => rowSet.has(c as HTMLElement))
+      .map((el) => ({ el, top: el.getBoundingClientRect().top }))
+      .sort((a, b) => a.top - b.top)
+      .map((x) => x.el);
 
     const domRows: DomRow[] = ordered.map((el) => ({
       el,
@@ -194,22 +199,25 @@ export class DomMap {
         norm(r.el.querySelector<HTMLElement>(sel("userMessage"))?.textContent ?? "")
       );
 
+      // Best-scoring offset, not all-or-nothing: a row that mounts with its
+      // text half-rendered must not throw the anchor back to offset 0 for a
+      // tick (that made the highlight snap far up the chat and back while
+      // scrolling). Each candidate offset scores one point per exact text
+      // match; ties resolve to the LATEST offset (chats open at the bottom).
       let start = 0;
-      if (rowTexts.length) {
-        const matchesAt = (s: number) =>
-          rowTexts.every((t, j) => {
-            const nt = humanNodes[s + j]?.text;
-            return nt !== undefined && (t === "" || nt === "" || t === nt);
-          });
-        for (let s = humanNodes.length - rowTexts.length; s >= 0; s--) {
-          if (matchesAt(s)) {
-            // walk starts at the first mounted human's path index, minus
-            // one slot per assistant row mounted before it (a reply whose
-            // own prompt is just above the window)
-            const leadingAssistants = pending.indexOf(humanRows[0]!);
-            start = Math.max(0, humanNodes[s]!.idx - leadingAssistants);
-            break;
-          }
+      let bestScore = 0;
+      for (let s = humanNodes.length - rowTexts.length; s >= 0; s--) {
+        let score = 0;
+        for (let j = 0; j < rowTexts.length; j++) {
+          if (rowTexts[j] !== "" && rowTexts[j] === humanNodes[s + j]!.text) score++;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          // walk starts at the first mounted human's path index, minus one
+          // slot per assistant row mounted before it (a reply whose own
+          // prompt is just above the window)
+          const leadingAssistants = pending.indexOf(humanRows[0]!);
+          start = Math.max(0, humanNodes[s]!.idx - leadingAssistants);
         }
       }
 
