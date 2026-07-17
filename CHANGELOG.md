@@ -2,6 +2,23 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.8.3 — 2026-07-16
+
+### DOM ↔ model mapping
+
+- **Row alignment is anchored by prompt text, not assumed to start at the
+  path's first message**: long chats virtualize, so only a contiguous
+  window of rows near the viewport is mounted. Alignment previously mapped
+  the first *mounted* row to the first *path* message, shifting every uuid
+  to an earlier message whenever the top of the chat was unmounted — on
+  opening a long chat the panel highlighted a higher message instead of the
+  last one, and jumps targeted the wrong rows. The mounted window's offset
+  in the path is now found by matching the rendered prompt texts against
+  the conversation's messages, live on every rebuild. Nothing about scroll
+  position or the current message is ever stored between sessions.
+- Unmapped note rows can no longer leak into the regular alignment walk
+  and shift it.
+
 ## 0.8.2 — 2026-07-16
 
 ### Prompt history panel

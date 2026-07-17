@@ -8,9 +8,12 @@
  *     no per-message uuid exists in the DOM, so identity comes from order.)
  *  2. The message-list container is the lowest ancestor containing all
  *     message markers; rows are its direct children holding one marker each.
- *  3. Rows are aligned to the model's active path by sender sequence: the
- *     rendered chat is exactly one root-to-leaf path, so the nth human row is
- *     the nth human message on the path, ditto assistant.
+ *  3. Rows are aligned to the model's active path by sender sequence,
+ *     ANCHORED BY PROMPT TEXT: long chats virtualize, so the mounted rows
+ *     are a contiguous WINDOW of the path — not necessarily its start. The
+ *     window's offset is found by matching the mounted human rows' text
+ *     against the path's human messages; assuming offset 0 shifted every
+ *     uuid to an earlier message whenever the top of the chat was unmounted.
  *
  * KNOWN LIMITATION (flagged in the recon report): assistant rows have no
  * dedicated data-testid in the captures; the action-bar heuristic degrades if
@@ -170,10 +173,49 @@ export class DomMap {
           i++;
         }
       }
+      // Pass 2 anchor: virtualization mounts only a contiguous WINDOW of
+      // the path, so the first mounted row is NOT necessarily the path's
+      // first message. Find the window's offset by matching the mounted
+      // human rows' body text against the path's human messages (empty
+      // texts — e.g. attachment-only prompts — match anything). If the
+      // same prompt sequence appears at several offsets, take the last:
+      // chats open scrolled to the bottom. No match → offset 0 (a fully
+      // mounted chat always matches at 0, so this only degrades when text
+      // extraction itself fails).
+      const norm = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, 300);
       const visibleNodes = path.filter((n) => !n.isNote);
-      let pathIdx = 0;
+      const pending = domRows.filter((r) => !r.uuid && !DomMap.isNoteRow(r));
+      const humanRows = pending.filter((r) => r.sender === "human");
+      const humanNodes: { text: string; idx: number }[] = [];
+      visibleNodes.forEach((n, idx) => {
+        if (n.sender === "human") humanNodes.push({ text: norm(n.text), idx });
+      });
+      const rowTexts = humanRows.map((r) =>
+        norm(r.el.querySelector<HTMLElement>(sel("userMessage"))?.textContent ?? "")
+      );
+
+      let start = 0;
+      if (rowTexts.length) {
+        const matchesAt = (s: number) =>
+          rowTexts.every((t, j) => {
+            const nt = humanNodes[s + j]?.text;
+            return nt !== undefined && (t === "" || nt === "" || t === nt);
+          });
+        for (let s = humanNodes.length - rowTexts.length; s >= 0; s--) {
+          if (matchesAt(s)) {
+            // walk starts at the first mounted human's path index, minus
+            // one slot per assistant row mounted before it (a reply whose
+            // own prompt is just above the window)
+            const leadingAssistants = pending.indexOf(humanRows[0]!);
+            start = Math.max(0, humanNodes[s]!.idx - leadingAssistants);
+            break;
+          }
+        }
+      }
+
+      let pathIdx = start;
       for (const row of domRows) {
-        if (row.uuid) continue;
+        if (row.uuid || DomMap.isNoteRow(row)) continue;
         while (pathIdx < visibleNodes.length && visibleNodes[pathIdx]!.sender !== row.sender) pathIdx++;
         if (pathIdx < visibleNodes.length) {
           row.uuid = visibleNodes[pathIdx]!.uuid;
