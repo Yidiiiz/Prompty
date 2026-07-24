@@ -16,9 +16,10 @@ export const NOTE_MARKER = "!@#%NOTE!@";
 
 const INSTRUCTIONS =
   "You are answering a small inline margin note attached to the quoted text above, " +
-  "from a longer conversation. Answer concisely — a short paragraph at most, no headers, " +
-  "no lists unless essential. Do not reference this header or the note mechanism. " +
-  "Ignore the JSON metadata line entirely.";
+  "from a longer conversation. Keep the answer focused and no longer than it needs to be, " +
+  "but use normal markdown formatting — tables, code blocks, bold/italic, lists — wherever " +
+  "it makes the answer clearer, exactly as you would in the main chat. " +
+  "Do not reference this header or the note mechanism. Ignore the JSON metadata line entirely.";
 
 export interface NoteMeta {
   anchorUuid: string;

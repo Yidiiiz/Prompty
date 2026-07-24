@@ -179,8 +179,10 @@ touched plus "Cross-cutting".
 - ☐ Open a note/comment composer, type nothing, then click a message's
   **Branch from here** (or select text elsewhere, or click the main box): the
   empty composer disappears. With text typed, it stays (and autosaves).
-- ☐ A note answer containing a table / `==highlight==` / `~~strike~~` renders
-  formatted in the card and in the ⤢ modal, not as raw markdown.
+- ☐ A note answer containing a table / `==highlight==` / `~~strike~~` /
+  `> blockquote` renders formatted in the card and in the ⤢ modal (not raw
+  markdown, and the blockquote is not a literal `>` line). The answer is plain
+  while streaming and switches to formatted once complete.
 
 ## 4b. Reply references
 
@@ -198,7 +200,9 @@ touched plus "Cross-cutting".
 - ☐ Type in the composer, wait ~1s, reload: banner above the composer shows
   *autosaved message* (italic) + first line + **Restore** / **Clear**.
 - ☐ Restore refills the composer text exactly (multi-line preserved).
-- ☐ Clear removes the draft; reload shows no banner.
+- ☐ Clear empties the box and removes the draft; reload shows **no banner and
+  an empty composer** (the site's resurrected copy is emptied by the cleared
+  tombstone). Then type something new → reload shows the banner again.
 - ☐ Attach a small file + text, reload, Restore: text refills and the file
   reattaches (or an honest "couldn't reattach" notice appears).
 - ☐ Attach >5 MB total, type, reload: banner shows "(attachments not saved)";

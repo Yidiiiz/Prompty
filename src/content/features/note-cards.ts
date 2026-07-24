@@ -154,7 +154,12 @@ export class NoteCardManager {
       if (live) {
         live.status = "done";
         live.reply = msg.text;
+        // The reply is only fully formatted once complete (the streaming view
+        // is deliberately plain); re-render now from the finalized text, then
+        // request a tick so the refetched tree content (identical, canonical)
+        // is reflected too.
         this.updateCardContent(baseNoteId(msg.noteId));
+        requestTick();
       }
     });
     ctx.bus.on("note-send-failed", (msg) => {

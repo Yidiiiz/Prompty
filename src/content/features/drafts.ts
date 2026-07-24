@@ -32,6 +32,7 @@ import { cssVar, FONT_SANS, UI, Z_PANEL } from "../../shared/tokens";
 import { sel } from "../../shared/selectors";
 import {
   clearDraft,
+  clearDraftFiles,
   getDraft,
   getDraftFiles,
   saveDraft,
@@ -69,6 +70,11 @@ export class DraftsFeature implements Feature {
   private saveMain: () => void;
   private noteDraft: { kind: "note" | "comment"; anchor: GutterAnchor; text: string } | null = null;
   private saveNoteDraft: () => void;
+  /** A dismissed draft whose text the site keeps re-inserting: empty the
+   *  composer whenever it reappears, until the user types something new. */
+  private pendingClear: { conversationUuid: string; text: string } | null = null;
+  /** Rate-limit tombstone clears so we never fight the editor frame by frame. */
+  private lastTombstoneClearAt = 0;
 
   constructor(
     private ctx: Ctx,
@@ -96,6 +102,8 @@ export class DraftsFeature implements Feature {
       this.lastSendAt.set(msg.conversationUuid, Date.now());
       // any send (normal, branch, restored draft) makes the offer stale
       if (msg.conversationUuid === this.bannerForConversation) this.removeBanner();
+      // a send means the composer is being used again: retire any tombstone
+      if (this.pendingClear?.conversationUuid === msg.conversationUuid) this.pendingClear = null;
     });
     ctx.bus.on("stream-done", (msg) => {
       if (!this.enabled) return;
@@ -104,6 +112,7 @@ export class DraftsFeature implements Feature {
     ctx.bus.on("conversation-changed", (msg) => {
       this.removeBanner();
       this.noteDraft = null;
+      this.pendingClear = null; // scoped to a conversation; re-armed by offerRestore
       if (this.enabled && msg.conversationUuid) void this.offerRestore(msg.conversationUuid);
     });
 
@@ -164,6 +173,14 @@ export class DraftsFeature implements Feature {
         // (the banner vanished right after reload) nor rewrite/clear the
         // stored draft mid-initialization.
         if (!ev.isTrusted) return;
+        // Real typing that DIFFERS from a dismissed draft means the user wants
+        // a fresh draft — retire the tombstone so it stops emptying the box.
+        // saveMain (below) then overwrites the stored tombstone with the new
+        // draft under the same key (no separate delete, no write race).
+        const text = getComposerText();
+        if (this.pendingClear && text.trim() && text !== this.pendingClear.text) {
+          this.pendingClear = null;
+        }
         // typing overwrites the stored draft, so the restore offer is stale
         this.removeBanner();
         this.saveMain();
@@ -171,6 +188,18 @@ export class DraftsFeature implements Feature {
     }
     // keep the banner overlaid on the site's alert-band area
     if (this.bannerHost) this.placeBanner();
+    // the site re-inserts a dismissed draft on load; empty it whenever it
+    // reappears. The tombstone stays armed (so persistMainDraft keeps the
+    // stored record), but the clear itself is rate-limited so we never fight
+    // the editor frame by frame.
+    if (this.pendingClear && this.pendingClear.conversationUuid === this.ctx.getCurrentConversation()) {
+      const text = getComposerText();
+      const now = Date.now();
+      if (text.trim() && text === this.pendingClear.text && now - this.lastTombstoneClearAt > 750) {
+        this.lastTombstoneClearAt = now;
+        clearComposerText();
+      }
+    }
   }
 
   private isInComposer(target: EventTarget | null): boolean {
@@ -195,6 +224,12 @@ export class DraftsFeature implements Feature {
     const conv = this.ctx.getCurrentConversation();
     if (!conv) return;
     const text = getComposerText();
+    // While a cleared draft's text is still being echoed by the site (or the
+    // box is empty from our own clear), leave the tombstone intact — don't let
+    // an empty composer delete it or an unchanged one overwrite it.
+    if (this.pendingClear && this.pendingClear.conversationUuid === conv) {
+      if (!text.trim() || text === this.pendingClear.text) return;
+    }
     const files = this.sessionFiles.get(conv) ?? [];
     if (!text.trim() && !files.length) {
       // The user emptied the composer themselves (app-side clears are state
@@ -286,6 +321,12 @@ export class DraftsFeature implements Feature {
       await clearDraft(conversationUuid); // lazy purge of expired drafts
       return;
     }
+    if (draft.cleared) {
+      // The draft was dismissed; the site may still resurrect its text. Arm
+      // the tombstone (onTick empties the box when it reappears) — no banner.
+      this.pendingClear = { conversationUuid, text: draft.text };
+      return;
+    }
     await this.bumpIfLive();
     this.showBanner(draft);
   }
@@ -337,18 +378,33 @@ export class DraftsFeature implements Feature {
     shadow.querySelector(".line")!.textContent = firstLine;
     shadow.querySelector(".restore")!.addEventListener("click", () => void this.restore(draft));
     shadow.querySelector(".clear")!.addEventListener("click", () => {
-      void clearDraft(draft.conversationUuid);
-      this.sessionFiles.delete(draft.conversationUuid);
-      // The site restores composer text across reloads by itself, so the
-      // draft text is usually ALREADY sitting in the box — "Clear" must
-      // discard that visible copy too, or it looks like it did nothing.
-      // Only when it matches the draft: never destroy unrelated typing.
-      if (getComposerText() === draft.text) clearComposerText();
-      this.removeBanner();
+      void this.clearDraftFully(draft);
     });
     this.bannerHost = host;
     this.bannerForConversation = draft.conversationUuid;
     this.placeBanner();
+  }
+
+  /**
+   * "Clear" the draft: empty the composer AND leave a tombstone so the site's
+   * own restored copy is emptied again on the next reload (otherwise the text
+   * reappears with no banner to act on). Only the matching text is touched.
+   */
+  private async clearDraftFully(draft: DraftRecord): Promise<void> {
+    this.sessionFiles.delete(draft.conversationUuid);
+    await clearDraftFiles(draft.conversationUuid);
+    if (getComposerText() === draft.text) clearComposerText();
+    // Record the tombstone (a normal draft would offer Restore; a cleared one
+    // silently empties the box). Kept for the same 2h window as a live draft.
+    this.pendingClear = { conversationUuid: draft.conversationUuid, text: draft.text };
+    await saveDraft({
+      conversationUuid: draft.conversationUuid,
+      text: draft.text,
+      mode: "normal",
+      cleared: true,
+      savedAt: Date.now(),
+    });
+    this.removeBanner();
   }
 
   /** Fixed overlay aligned to the site's alert-band area. */

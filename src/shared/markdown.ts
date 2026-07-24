@@ -86,11 +86,12 @@ export function renderMarkdown(md: string): string {
       out.push(`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
       continue;
     }
-    if (/^\s*>\s?/.test(line)) {
+    // blockquote — note the `>` has already been HTML-escaped to `&gt;`
+    if (/^\s*&gt;\s?/.test(line)) {
       flushPara();
       const quote: string[] = [];
-      while (i < lines.length && /^\s*>\s?/.test(lines[i] ?? "")) {
-        quote.push((lines[i] ?? "").replace(/^\s*>\s?/, ""));
+      while (i < lines.length && /^\s*&gt;\s?/.test(lines[i] ?? "")) {
+        quote.push((lines[i] ?? "").replace(/^\s*&gt;\s?/, ""));
         i++;
       }
       out.push(`<blockquote>${inline(quote.join("<br>"))}</blockquote>`);

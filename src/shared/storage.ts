@@ -49,6 +49,13 @@ export interface DraftRecord {
   attachmentsSkipped?: boolean;
   /** true when attachment blobs were saved to IndexedDB. */
   hasAttachments?: boolean;
+  /**
+   * A "cleared" tombstone: the user dismissed this draft, but the site keeps
+   * its own copy of the composer text and re-inserts it on reload. The
+   * tombstone remembers the dismissed text so the next load can empty the
+   * composer again instead of resurrecting it with no banner.
+   */
+  cleared?: boolean;
   savedAt: number;
 }
 

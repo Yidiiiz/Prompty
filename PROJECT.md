@@ -1,6 +1,6 @@
 # Prompt Tree — Project Specification & Update History
 
-**Current version:** 0.12.0 (2026-07-23) · Chrome MV3 · personal use only
+**Current version:** 0.12.1 (2026-07-23) · Chrome MV3 · personal use only
 
 A Chrome extension that augments **claude.ai** with power-user tools built on
 the site's real conversation structure, observed from its own network traffic
@@ -14,7 +14,7 @@ the extension does **today** and how it got here. Companion docs:
 
 ---
 
-## 1. Feature specifications (as of 0.12.0)
+## 1. Feature specifications (as of 0.12.1)
 
 ### 1.1 Branch compose
 
@@ -86,6 +86,9 @@ A borderless, shadow-recessed rail embedded at the chat's left edge
   **empty** composer is ephemeral: a pointer-down outside the gutter (starting
   a branch, a reply, or clicking back into the chat) closes it, but only while
   it holds no typed text — a written draft stays open and autosaved.
+- The note prompt asks the model for a focused answer that still uses normal
+  markdown (tables, code, emphasis, lists) where it helps, so answers are
+  formatted like the main chat rather than forced to plain prose.
 - The Q&A is sent as a **hidden message pair on the current branch** —
   parented to the real thread tail, creating **no branch**: no native
   version arrows, no panel entry, and the conversation continues underneath
@@ -184,9 +187,12 @@ recomputed on every structural tree change. The fetch patch applies it to:
   **Restore** re-enters the saved mode — reactivating branch mode or
   reopening the note/comment composer at the re-resolved anchor — refills
   the text, reattaches files (synthetic drop; honest notice on failure).
-  **Clear** discards the stored draft *and* empties the composer when its
-  content matches the draft (the site restores its own copy of the text
-  across reloads, which otherwise made Clear look inert).
+  **Clear** empties the composer when its content matches the draft and
+  leaves a **cleared tombstone** (a draft record flagged `cleared`): the site
+  restores its own copy of the text across reloads, so on the next load, if
+  that exact text reappears, the composer is emptied again (rate-limited, no
+  banner) instead of resurrecting the message with nothing to act on. Typing
+  anything different retires the tombstone into a normal draft.
 - Only **trusted** (real-keyboard) input dismisses the offer or drives
   autosave — the site's editor fires synthetic input events while restoring
   its own draft on load, which previously dismissed the banner instantly.
@@ -273,6 +279,7 @@ Full details in [CHANGELOG.md](CHANGELOG.md); this is the arc.
 | 0.11.0 | 2026-07-16 | Honest bottom pin (only when parked at the bottom); zero-height rows excluded from tracking; draft banner survives reload (trusted-input guard). Hover highlight added. |
 | 0.11.1 | 2026-07-16 | Hover highlight removed (scroll-only tracking); first-message pin at scroll 0; edge centering reverted to clamping. |
 | 0.12.0 | 2026-07-23 | Whitespace-insensitive note/comment anchoring (multi-line quotes no longer drop to the message top); empty composer auto-closes on switching; tables/highlight/strike/blockquote in cards; **reply references** (formatted hover popover + click-to-source highlight for quote-replies); draft banner visible again (zero-width alert-band fallback). |
+| 0.12.1 | 2026-07-23 | Clear persists across reloads (cleared tombstone re-empties the site's resurrected text); note answers allowed to use markdown formatting (instructions had suppressed it); blockquote rendering fixed (`>` escaped to `&gt;` before detection). |
 
 ### Hard-won invariants (why the code looks the way it does)
 

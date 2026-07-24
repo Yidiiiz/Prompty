@@ -2,6 +2,32 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.12.1 — 2026-07-23
+
+### Drafts
+
+- **"Clear" now sticks across a reload.** claude.ai keeps its own copy of the
+  composer text and re-inserts it on load; clearing our draft (and emptying
+  the box) left nothing to stop that copy coming back on the next reload —
+  with no banner to act on. Clear now leaves a **cleared tombstone**: on the
+  next load, if the site resurrects that exact text, the composer is emptied
+  again (rate-limited, never fighting the editor) and no banner is shown.
+  Typing anything different retires the tombstone and starts a fresh draft.
+
+### Notes & comments
+
+- **Note/comment answers can be formatted again.** The built-in note
+  instructions told the model "no headers, no lists unless essential", so its
+  answers were plain prose with nothing to render. They now ask for normal
+  markdown — tables, code, emphasis, lists — wherever it aids the answer, just
+  like the main chat, while staying focused.
+- **Blockquotes render** in cards, the modal, and the reply popover — the
+  renderer looked for `>` but the text is HTML-escaped to `&gt;` first, so the
+  quote was never detected and showed as a literal `>` line.
+- On completion, a note/comment card re-renders from the finalized (fully
+  formatted) reply — the streaming view stays plain, the finished view is
+  formatted.
+
 ## 0.12.0 — 2026-07-23
 
 ### Notes & comments
