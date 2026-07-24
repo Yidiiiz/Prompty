@@ -33,7 +33,10 @@ src/
 │     │                      streaming, modal, unanchored drawer feed
 │     ├─ notes.ts            F3 entry: selection → note button → anchor build
 │     ├─ comments.ts         F4 entry: hover → "+" button → caret/ratio anchor
+│     ├─ replies.ts          F6: quote-reply refs (bar + formatted popover +
+│     │                      click-to-source highlight; CSS Custom Highlight API)
 │     ├─ anchoring.ts        text indexing, quote/prefix/suffix/offset resolution
+│     │                      (dense/whitespace-insensitive via text-match.ts)
 │     └─ drafts.ts           F5: capture (composer + note composer + files),
 │                            restore banner, mode re-entry, lazy expiry
 ├─ shared/                world-agnostic building blocks
@@ -46,7 +49,10 @@ src/
 │  ├─ storage.ts          chrome.storage records (settings/notes/drafts/panel)
 │  │                      + IndexedDB draft attachments
 │  ├─ summary.ts          swappable Summarizer (v1: markdown-strip + truncate)
-│  ├─ markdown.ts         small safe renderer for note cards/modal
+│  ├─ markdown.ts         small safe renderer (bold/italic/code/lists/tables/
+│  │                      highlight/strike/blockquote) for cards/modal/popover
+│  ├─ text-match.ts       dense whitespace/markdown-insensitive matching with
+│  │                      a map back to source offsets (anchors, reply quotes)
 │  ├─ uuid.ts             UUIDv7 (matches claude.ai's client-generated ids)
 │  └─ util.ts             debounce, rafThrottle, EventBus, escapeHtml, clamp
 └─ popup/                 settings popup (per-feature toggles, live via

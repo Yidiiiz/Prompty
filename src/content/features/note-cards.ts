@@ -93,6 +93,8 @@ interface ComposerState {
   anchor: GutterAnchor;
   quoteDisplay: string | null;
   el: HTMLElement;
+  /** Removes the outside-pointer listener that auto-closes an empty composer. */
+  detachOutside: () => void;
 }
 
 /** `noteId#3` → `noteId`; plain ids pass through. */
@@ -164,6 +166,10 @@ export class NoteCardManager {
       }
       toastOnce(`note-failed-${msg.noteId}`, `Prompt Tree: note failed — ${msg.reason}`);
     });
+    ctx.bus.on("branch-mode-changed", (msg) => {
+      // Entering branch mode retires an empty, unsubmitted composer.
+      if (msg.targetUuid) this.closeComposerIfEmpty();
+    });
     ctx.bus.on("unanchored-note-open", (msg) => this.openModal(msg.noteId));
     ctx.bus.on("deleted-note-restore", (msg) => void this.restoreNote(msg.noteId));
     // initial conversation (constructor runs after navigation may have settled)
@@ -192,6 +198,7 @@ export class NoteCardManager {
     this.cardEls.clear();
     this.connEls.clear();
     this.entryButtons.clear();
+    this.composer?.detachOutside();
     this.composer = null;
     this.host?.remove();
     this.host = null;
@@ -362,9 +369,21 @@ export class NoteCardManager {
     };
     el.querySelector<HTMLButtonElement>("button.primary")!.addEventListener("click", submit);
     el.querySelector<HTMLButtonElement>("button.ghost")!.addEventListener("click", () => this.closeComposer());
+    // An EMPTY composer is ephemeral: starting something else — branching a
+    // message, selecting text to reply, clicking back into the main chat —
+    // should make it vanish rather than linger. A pointerdown outside the
+    // gutter closes it only while it holds no text (a written draft is kept
+    // and preserved by autosave).
+    const onOutside = (ev: Event) => {
+      const target = ev.target;
+      if (target instanceof Node && this.host?.contains(target)) return;
+      if (!textarea.value.trim()) this.closeComposer();
+    };
+    document.addEventListener("pointerdown", onOutside, true);
+    const detachOutside = () => document.removeEventListener("pointerdown", onOutside, true);
     // Position at the anchor BEFORE inserting and focus without scrolling —
     // focusing an unpositioned (top: 0) element would yank the page to the top.
-    this.composer = { kind, anchor, quoteDisplay, el };
+    this.composer = { kind, anchor, quoteDisplay, el, detachOutside };
     const y = this.resolveComposerY();
     if (y !== null) el.style.top = `${Math.max(0, Math.round(y))}px`;
     layer.appendChild(el);
@@ -374,11 +393,21 @@ export class NoteCardManager {
 
   closeComposer(): void {
     if (!this.composer) return;
+    this.composer.detachOutside();
     this.composer.el.remove();
     this.composer = null;
     requestTick();
     const conversationUuid = this.ctx.getCurrentConversation();
     if (conversationUuid) this.ctx.bus.emit("note-composer-closed", { conversationUuid });
+  }
+
+  /** Close the open note/comment composer if it holds no typed text (used
+   *  when the user switches into branch mode). */
+  closeComposerIfEmpty(): void {
+    const el = this.composer?.el;
+    if (!el) return;
+    const textarea = el.querySelector<HTMLTextAreaElement>("textarea");
+    if (!textarea || !textarea.value.trim()) this.closeComposer();
   }
 
   /* -------------------------------------------------------------- submit */
@@ -1025,6 +1054,11 @@ const CARD_BASE_CSS = `
   .card .a pre { background: ${cssVar("--bg-200")}; border-radius: ${UI.radiusSm}; padding: 7px 8px; overflow-x: auto; }
   .card .a code { font-family: ${FONT_MONO}; font-size: 11px; }
   .card .a a { color: ${cssVar("--accent-secondary-100")}; }
+  .card .a mark { background: ${cssVar("--accent-main-100", 0.25)}; color: inherit; border-radius: 2px; padding: 0 1px; }
+  .card .a table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 11px; display: block; overflow-x: auto; }
+  .card .a th, .card .a td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 3px 6px; text-align: left; }
+  .card .a th { background: ${cssVar("--bg-200", 0.7)}; font-weight: 600; }
+  .card .a blockquote { margin: 4px 0; padding: 2px 8px; border-left: 2px solid ${cssVar("--border-200")}; color: ${cssVar("--text-300")}; }
   .card .fucomp { display: none; margin-top: 7px; }
   .card .fufoot { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   .card .foot { display: flex; align-items: center; gap: 4px; margin-top: 7px; }
@@ -1177,4 +1211,9 @@ const MODAL_CSS = `
   .answer pre { background: ${cssVar("--bg-200")}; border-radius: ${UI.radiusSm}; padding: 10px 12px; overflow-x: auto; }
   .answer code { font-family: ${FONT_MONO}; font-size: 13px; }
   .answer a { color: ${cssVar("--accent-secondary-100")}; }
+  .answer mark { background: ${cssVar("--accent-main-100", 0.25)}; color: inherit; border-radius: 2px; padding: 0 1px; }
+  .answer table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  .answer th, .answer td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 5px 9px; text-align: left; }
+  .answer th { background: ${cssVar("--bg-200", 0.7)}; font-weight: 600; }
+  .answer blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid ${cssVar("--border-200")}; color: ${cssVar("--text-300")}; }
 `;

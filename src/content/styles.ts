@@ -67,6 +67,15 @@ const CSS = `
   outline-offset: 1px;
 }
 .pt-branch-btn svg { display: block; }
+
+/* Reply-quote references and their jump target use the CSS Custom Highlight
+   API — arbitrary text ranges styled with NO DOM mutation (the reply text and
+   the source span both live in React-owned message rows). */
+::highlight(pt-reply-quote) { background-color: ${cssVar("--accent-main-100", 0.1)}; }
+::highlight(pt-reply-source) {
+  background-color: ${cssVar("--accent-main-100", 0.22)};
+  color: ${cssVar("--text-100")};
+}
 `;
 
 export function installPageStyles(): void {

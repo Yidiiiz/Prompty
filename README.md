@@ -23,6 +23,10 @@ power-user tools built on its real conversation structure:
   replies; each note instructs the model to treat it as a side question.)
 - **Comments** — the same margin Q&A anchored to a position in the reply
   (Google-Docs-style "+" on hover) instead of a highlight.
+- **Reply references** — when you quote a message with the site's reply
+  action, the quoted passage in your message gets an accent bar: hover it to
+  see the quote in its original formatting (tables, emphasis, code), click it
+  to jump to the source message with the exact span highlighted.
 - **Draft autosave** — composer drafts (including branch/note/comment drafts
   and attachments up to 5 MB) survive reloads; a slim banner offers
   Restore/Clear for drafts younger than 2 hours.
@@ -84,6 +88,9 @@ extension card, then reload the claude.ai tab.
   history panel.
 - **Comments**: hover a reply with nothing selected → click the **+** in the
   margin.
+- **Reply references**: quote a message with the site's own reply action and
+  send. In your message, hover the accent bar beside the quote to preview it
+  formatted, or click it to jump to and highlight the original.
 - **Drafts**: just type; everything is saved automatically per conversation.
   On return, use **Restore** (re-enters branch/note/comment mode when the
   target still exists) or **Clear**.

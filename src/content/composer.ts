@@ -56,7 +56,12 @@ export function placeAboveComposer(host: HTMLElement, zIndex: number, liftPx = 0
   if (style.position !== "fixed") {
     host.style.cssText = `position:fixed;z-index:${zIndex};display:block;visibility:hidden;`;
   }
-  const rect = q<HTMLElement>("alertBandWrapper")?.getBoundingClientRect() ?? getComposerDockRect();
+  // Prefer the site's alert band, but only when it is actually laid out: it
+  // now renders as a zero-width placeholder even with no notice, and picking
+  // that over the composer dock left the draft-restore banner (and the
+  // branching header) permanently invisible.
+  const band = q<HTMLElement>("alertBandWrapper")?.getBoundingClientRect();
+  const rect = band && band.width > 0 ? band : getComposerDockRect();
   if (!rect || rect.width === 0) return; // stays hidden until measurable
   // Scaled to the prompt box: inset enough to clear its rounded corners,
   // centered over it, tracking the chat panel's width as it changes.

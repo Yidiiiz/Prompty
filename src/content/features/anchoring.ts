@@ -7,10 +7,17 @@
  * the RENDERED text of a message row at layout time, so zoom, reflow, and
  * markdown re-renders keep anchors correct.
  *
+ * Matching is WHITESPACE-INSENSITIVE (see shared/text-match): a DOM selection's
+ * toString() inserts a newline at every block boundary that the rendered text
+ * nodes don't contain, so an exact indexOf of a multi-line quote always failed
+ * and pinned the card to the message top. Every lookup runs on the dense
+ * projection and maps back to source offsets.
+ *
  * Failure behavior: resolvers return null; callers show "anchor moved" cards
  * pinned to the top of the message, or the unanchored drawer if the whole
  * message is gone.
  */
+import { denseIndex, densify, findDense, findDenseFirst } from "../../shared/text-match";
 
 export interface TextIndex {
   text: string;
@@ -86,7 +93,10 @@ export interface QuoteMatch {
 
 /**
  * Finds `quote` in the indexed text: prefix/suffix matches disambiguate
- * duplicate occurrences; charOffset proximity is the final tiebreaker.
+ * duplicate occurrences; charOffset proximity is the final tiebreaker. Matching
+ * ignores whitespace differences (dense projection), so a quote spanning block
+ * boundaries — where the selection carried newlines the DOM text lacks — is
+ * still located instead of collapsing the card to the message top.
  */
 export function findQuote(
   index: TextIndex,
@@ -96,32 +106,31 @@ export function findQuote(
   charOffset: number | undefined
 ): QuoteMatch | null {
   if (!quote) return null;
-  const positions: number[] = [];
-  for (let pos = index.text.indexOf(quote); pos >= 0; pos = index.text.indexOf(quote, pos + 1)) {
-    positions.push(pos);
-    if (positions.length > 200) break; // pathological repetition guard
-  }
-  if (!positions.length) return null;
-  let best = positions[0]!;
+  const di = denseIndex(index.text);
+  const matches = findDense(di, quote);
+  if (!matches.length) return null;
+  const dPrefix = prefix ? densify(prefix) : "";
+  const dSuffix = suffix ? densify(suffix) : "";
+  let best = matches[0]!;
   let bestScore = -Infinity;
-  for (const pos of positions) {
+  for (const m of matches) {
     let score = 0;
-    if (prefix && index.text.slice(Math.max(0, pos - prefix.length), pos) === prefix) score += 2;
-    if (suffix && index.text.slice(pos + quote.length, pos + quote.length + suffix.length) === suffix) score += 2;
-    if (charOffset !== undefined) score -= Math.abs(pos - charOffset) / Math.max(index.text.length, 1);
+    if (dPrefix && di.dense.slice(Math.max(0, m.denseStart - dPrefix.length), m.denseStart) === dPrefix) score += 2;
+    if (dSuffix && di.dense.slice(m.denseEnd, m.denseEnd + dSuffix.length) === dSuffix) score += 2;
+    if (charOffset !== undefined) score -= Math.abs(m.start - charOffset) / Math.max(index.text.length, 1);
     if (score > bestScore) {
       bestScore = score;
-      best = pos;
+      best = m;
     }
   }
-  return { start: best, end: best + quote.length };
+  return { start: best.start, end: best.end };
 }
 
 /** Finds a comment's anchorText; returns its start offset or null. */
 export function findAnchorText(index: TextIndex, anchorText: string): number | null {
   if (!anchorText) return null;
-  const pos = index.text.indexOf(anchorText);
-  return pos >= 0 ? pos : null;
+  const m = findDenseFirst(denseIndex(index.text), anchorText);
+  return m ? m.start : null;
 }
 
 /** Viewport rect of the first line of a character range (for gutter y). */

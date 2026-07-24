@@ -18,6 +18,7 @@ import { q } from "../../shared/selectors";
 import { subscribe } from "../observer";
 import type { Ctx, Feature } from "../ctx";
 import { indexText, offsetOfPoint } from "./anchoring";
+import { denseIndex, findDense as findDenseCandidates } from "../../shared/text-match";
 import type { GutterAnchor, NoteCardManager } from "./note-cards";
 
 export class NotesFeature implements Feature {
@@ -98,10 +99,24 @@ export class NotesFeature implements Feature {
     quote: string
   ): GutterAnchor {
     const index = indexText(rowEl);
-    let start = offsetOfPoint(index, range.startContainer, range.startOffset);
-    if (start === null || index.text.slice(start, start + quote.length) !== quote) {
-      const found = index.text.indexOf(quote);
-      start = found >= 0 ? found : 0;
+    const di = denseIndex(index.text);
+    // Locate the quote's true SOURCE span (start..end) densely — a multi-line
+    // selection's newlines make quote.length differ from the source span, so
+    // prefix/suffix must be sliced around the real span, not start+quote.length.
+    // The selection-start offset only breaks ties between repeated quotes.
+    const pointStart = offsetOfPoint(index, range.startContainer, range.startOffset);
+    let start = pointStart ?? 0;
+    let end = start + quote.length;
+    const matches = findDenseCandidates(di, quote);
+    if (matches.length) {
+      const chosen =
+        pointStart === null
+          ? matches[0]!
+          : matches.reduce((a, b) =>
+              Math.abs(a.start - pointStart) <= Math.abs(b.start - pointStart) ? a : b
+            );
+      start = chosen.start;
+      end = chosen.end;
     }
     return {
       kind: "note",
@@ -109,7 +124,7 @@ export class NotesFeature implements Feature {
       anchorMessageUuid,
       quote: quote.slice(0, 300),
       prefix: index.text.slice(Math.max(0, start - 20), start),
-      suffix: index.text.slice(start + quote.length, start + quote.length + 20),
+      suffix: index.text.slice(end, end + 20),
       charOffset: start,
     };
   }

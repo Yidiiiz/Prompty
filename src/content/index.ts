@@ -28,6 +28,7 @@ import { TreePanelFeature } from "./features/tree-panel";
 import { NoteCardManager } from "./features/note-cards";
 import { NotesFeature } from "./features/notes";
 import { CommentsFeature } from "./features/comments";
+import { RepliesFeature } from "./features/replies";
 import { DraftsFeature } from "./features/drafts";
 
 const CONV_URL_RE = /\/chat\/([0-9a-fA-F-]{36})/;
@@ -60,6 +61,7 @@ function main(): void {
       treePanel: false,
       notes: false,
       comments: false,
+      replies: false,
       draftAutosave: false,
     },
   };
@@ -252,6 +254,7 @@ function main(): void {
         return new NotesFeature(ctx, cardManager);
       },
       () => (cardManager ? new CommentsFeature(ctx, cardManager) : null),
+      () => new RepliesFeature(ctx),
       () => (branchFeature && cardManager ? new DraftsFeature(ctx, branchFeature, cardManager) : null),
     ];
     for (const make of constructors) {

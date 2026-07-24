@@ -2,6 +2,56 @@
 
 All notable changes to Prompt Tree are documented here.
 
+## 0.12.0 — 2026-07-23
+
+### Notes & comments
+
+- **Notes and comments land where you make them again, not at the top of the
+  message.** A note's quote is `window.getSelection().toString()`, which
+  inserts a newline at every block boundary (between list items, table rows,
+  paragraphs) — but the rendered text nodes it came from contain no such
+  character. The old exact `indexOf` of that quote therefore never matched for
+  any multi-line selection, so the anchor collapsed to offset 0 and the card
+  pinned to the message top. All anchor lookups now run on a **dense
+  (whitespace-insensitive) projection** of the text that maps back to source
+  offsets (`shared/text-match.ts`), so multi-line quotes resolve to their true
+  position. Comment `anchorText` lookups use the same path.
+- **An empty note/comment composer now disappears when you switch to something
+  else** — starting a branch, selecting text to reply, or clicking back into
+  the chat. A pointer-down outside the gutter closes the composer only while it
+  holds no typed text (a written draft is kept and still autosaved).
+- **Note cards and the fullscreen note view render tables, ==highlight==,
+  ~~strikethrough~~, and blockquotes**, not just bold/italic/code/lists — the
+  markdown renderer was extended so a quoted or answered table no longer
+  collapses to flat text.
+
+### Reply references (new)
+
+- Quoting a message with claude.ai's own reply action drops the passage into
+  the composer as a blockquote; the sent message then begins with the quoted
+  lines. Prompt Tree now recognises such a message **from the conversation
+  model** (a visible human message whose leading blockquote is found in an
+  earlier message) and:
+  - marks the quoted passage in the reply with an accent reference bar and a
+    subtle highlight (CSS Custom Highlight API — no mutation of the site's
+    message DOM);
+  - **hovering the bar shows the quoted passage in its original formatting**
+    (the source message's markdown — tables, emphasis, code), instead of the
+    flattened plain-text blockquote;
+  - **clicking glides to the source message and highlights the exact span**
+    for a couple of seconds (relative-delta scrolling, cancellable by any real
+    input, like the panel's jump).
+- Toggle: **Reply references** in the settings popup.
+
+### Drafts
+
+- **The autosaved "Restore / Clear" banner shows again.** The site's alert
+  band above the composer now renders as a zero-width placeholder even when it
+  carries no notice; the banner (and the branching header) preferred that band
+  over the composer dock and so measured a width of 0 and stayed invisible.
+  The band is used only when it actually has width; otherwise the composer dock
+  positions the bar as before.
+
 ## 0.11.1 — 2026-07-16
 
 ### Prompt history panel

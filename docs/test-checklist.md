@@ -171,6 +171,28 @@ touched plus "Cross-cutting".
 - ☐ The sent prompt (DevTools → Network) contains the `!@#%NOTE!@` header with
   `"kind":"comment"` and ~200 chars of surrounding context.
 
+## 4a. Anchoring & composer lifecycle (regression)
+
+- ☐ Select a **multi-line** passage (across paragraphs, list items, or a
+  table) and make a note: the card lands beside the selection, **not** at the
+  top of the message. Reload → still anchored there.
+- ☐ Open a note/comment composer, type nothing, then click a message's
+  **Branch from here** (or select text elsewhere, or click the main box): the
+  empty composer disappears. With text typed, it stays (and autosaves).
+- ☐ A note answer containing a table / `==highlight==` / `~~strike~~` renders
+  formatted in the card and in the ⤢ modal, not as raw markdown.
+
+## 4b. Reply references
+
+- ☐ Use the site's selection **Reply** on an assistant message, send: in your
+  message an accent bar sits beside the quoted block.
+- ☐ Hover the bar → a popover shows the quote in its **original formatting**
+  (bold/table/code), not flattened text.
+- ☐ Click the bar → the chat glides to the source message and the exact quoted
+  span is highlighted for ~2.5s; any scroll input cancels the glide.
+- ☐ A user message that merely starts with a `>` blockquote (no matching
+  source) shows no bar. Toggle **Reply references** off → bars/popover gone.
+
 ## 5. Draft autosave
 
 - ☐ Type in the composer, wait ~1s, reload: banner above the composer shows
@@ -223,6 +245,6 @@ touched plus "Cross-cutting".
   stream finishes; tree stays consistent.
 - ☐ Native features unharmed with the extension on: editing inline, retry,
   arrows, file upload, selection popover "Reply".
-- ☐ All five popup toggles off: page is visually indistinguishable from stock
+- ☐ All six popup toggles off: page is visually indistinguishable from stock
   claude.ai; network traffic shows no extension-originated requests.
 - ☐ Non-conversation pages (/new, /recents, settings): no panel, no errors.

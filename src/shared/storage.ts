@@ -57,6 +57,7 @@ export interface Settings {
   treePanel: boolean;
   notes: boolean;
   comments: boolean;
+  replies: boolean;
   draftAutosave: boolean;
 }
 
@@ -65,6 +66,7 @@ export const DEFAULT_SETTINGS: Settings = {
   treePanel: true,
   notes: true,
   comments: true,
+  replies: true,
   draftAutosave: true,
 };
 

@@ -1,6 +1,6 @@
 # Prompt Tree — Project Specification & Update History
 
-**Current version:** 0.11.1 (2026-07-16) · Chrome MV3 · personal use only
+**Current version:** 0.12.0 (2026-07-23) · Chrome MV3 · personal use only
 
 A Chrome extension that augments **claude.ai** with power-user tools built on
 the site's real conversation structure, observed from its own network traffic
@@ -14,7 +14,7 @@ the extension does **today** and how it got here. Companion docs:
 
 ---
 
-## 1. Feature specifications (as of 0.11.1)
+## 1. Feature specifications (as of 0.12.0)
 
 ### 1.1 Branch compose
 
@@ -82,7 +82,10 @@ A borderless, shadow-recessed rail embedded at the chat's left edge
 - Select text in an assistant reply → a ✎ button appears in the right
   margin (placed next to, never over, the native selection popover) → a
   margin composer opens; **Enter sends, Shift+Enter is a newline, Esc
-  cancels**. The composer transforms into the streaming card in place.
+  cancels**. The composer transforms into the streaming card in place. An
+  **empty** composer is ephemeral: a pointer-down outside the gutter (starting
+  a branch, a reply, or clicking back into the chat) closes it, but only while
+  it holds no typed text — a written draft stays open and autosaved.
 - The Q&A is sent as a **hidden message pair on the current branch** —
   parented to the real thread tail, creating **no branch**: no native
   version arrows, no panel entry, and the conversation continues underneath
@@ -94,9 +97,16 @@ A borderless, shadow-recessed rail embedded at the chat's left edge
   model in later turns; the built-in instructions tell it to treat the note
   as a side question.
 - Anchoring: quote + 20-char prefix/suffix + char offset; re-anchored
-  against rendered text every tick. An edited-away quote pins the card to
-  the message top flagged "anchor moved"; a missing anchor message routes
-  the note to the panel's **Unanchored notes** drawer.
+  against rendered text every tick. Matching is **whitespace-insensitive**
+  (`shared/text-match.ts` — a dense projection mapped back to source offsets):
+  a selection's `toString()` inserts newlines at block boundaries that the
+  rendered text nodes lack, so an exact match of a multi-line quote always
+  failed and dropped the card to the message top. An edited-away quote pins
+  the card to the message top flagged "anchor moved"; a missing anchor message
+  routes the note to the panel's **Unanchored notes** drawer.
+- Card/modal rendering covers tables, `==highlight==`, `~~strike~~`, and
+  blockquotes in addition to bold/italic/code/lists, so a quoted or answered
+  table is not flattened to plain text.
 - **Continue**: an ask box opens **inside the card** (Ask / Cancel / Esc;
   Enter sends) and the follow-up extends the same thread in place — under
   the hood another hidden pair whose metadata carries
@@ -121,7 +131,29 @@ instead of a highlight:
 - Anchor = first 40 chars of the text node under the pointer plus an
   offsetRatio (0–1within the message) as fallback under reflow/zoom.
 
-### 1.5 Hidden-note thread integrity (shared mechanics)
+### 1.5 Reply references
+
+When a message is quoted with claude.ai's own reply action, the quote enters
+the composer as a markdown blockquote, so the sent user message begins with
+`>`-prefixed lines. Prompt Tree recognises such a message **from the model**
+(never DOM scraping): a visible human message whose leading blockquote is
+found — dense/markdown-insensitive matched — in an earlier message on the path.
+
+- The quoted passage in the reply gets an accent **reference bar** (overlaid
+  in a gutter host, the only clickable UI) and a subtle background via the CSS
+  Custom Highlight API — **no mutation of the site's message DOM**.
+- **Hovering** the bar opens a popover that renders the quoted passage in its
+  original formatting (the source message's markdown — tables, emphasis,
+  code), not the flattened plain-text blockquote.
+- **Clicking** the bar glides to the source message (relative-delta scrolling,
+  cancellable by any genuine input) and highlights the exact quoted span for
+  ~2.5s (`::highlight(pt-reply-source)`).
+- A reply whose source can't be located shows nothing — the site's own
+  blockquote is left untouched (this is also the false-positive guard).
+- If claude.ai changes its quote-reply wire format, `parseQuoteReply`
+  (`src/content/features/replies.ts`) is the single place to adjust.
+
+### 1.6 Hidden-note thread integrity (shared mechanics)
 
 The app doesn't know the hidden pairs exist, so the page script maintains a
 per-conversation **thread-tail map**: every visible message with a hidden
@@ -136,7 +168,7 @@ recomputed on every structural tree change. The fetch patch applies it to:
   by the server ("Current leaf message has unexpected children"), so the
   PUT body is rewritten to the true leaf.
 
-### 1.6 Draft autosave
+### 1.7 Draft autosave
 
 - Captures (debounced ~500ms): main-composer text; branch mode (target +
   parent uuids); note/comment composer text with the full anchor;
@@ -144,7 +176,11 @@ recomputed on every structural tree change. The fetch patch applies it to:
   larger sets are flagged "attachments not saved").
 - Restore: on conversation load, a draft younger than 2 hours shows a slim
   banner overlaid on the site's alert-band position above the prompt box
-  (width scales with the prompt box; stacks with the branching header).
+  (width scales with the prompt box; stacks with the branching header). The
+  band is used for placement only when it actually has width — it now renders
+  as a zero-width placeholder even when empty, which had left the banner (and
+  the branching header) permanently invisible; the composer dock is the
+  fallback.
   **Restore** re-enters the saved mode — reactivating branch mode or
   reopening the note/comment composer at the re-resolved anchor — refills
   the text, reattaches files (synthetic drop; honest notice on failure).
@@ -157,11 +193,11 @@ recomputed on every structural tree change. The fetch patch applies it to:
 - Lifecycle: a live draft keeps refreshing its timestamp while in use; a
   successful send clears it; expired drafts purge lazily.
 
-### 1.7 Settings popup
+### 1.8 Settings popup
 
-Per-feature on/off switches (branch compose, panel, notes, comments,
-drafts), applied live via `chrome.storage` change events. Disabling a
-feature removes all of its UI immediately.
+Per-feature on/off switches (branch compose, panel, notes, comments, reply
+references, drafts), applied live via `chrome.storage` change events.
+Disabling a feature removes all of its UI immediately.
 
 ---
 
@@ -180,7 +216,9 @@ Two content scripts, one bridge:
 - **ISOLATED world** (`src/content/`, document_idle): owns the
   `ConversationTree` model (built exclusively from network truth), the DOM
   map, all UI features, and settings. Communicates with the page script via
-  `window.postMessage` with origin checks and an envelope key.
+  `window.postMessage` with origin checks and an envelope key. Anchor, quote,
+  and reply-source lookups all go through `shared/text-match.ts` (dense,
+  whitespace/markdown-insensitive projections that map back to source offsets).
 - **DOM ↔ model mapping** (`src/content/dom-map.ts`): rows are identified by
   the user-message testid / assistant action-bar markers; kept in DOM order
   unless the measurable rows are genuinely out of visual order (virtualizer
@@ -234,6 +272,7 @@ Full details in [CHANGELOG.md](CHANGELOG.md); this is the arc.
 | 0.10.0 | 2026-07-16 | Branch mode truncates the panel; jitter-free glide (instant scroll-behavior + settle snap); top-of-viewport tracking; **leaf-PUT note remap** (fixes "Current leaf message has unexpected children" on branch switches); Enter-to-send; caret directions. |
 | 0.11.0 | 2026-07-16 | Honest bottom pin (only when parked at the bottom); zero-height rows excluded from tracking; draft banner survives reload (trusted-input guard). Hover highlight added. |
 | 0.11.1 | 2026-07-16 | Hover highlight removed (scroll-only tracking); first-message pin at scroll 0; edge centering reverted to clamping. |
+| 0.12.0 | 2026-07-23 | Whitespace-insensitive note/comment anchoring (multi-line quotes no longer drop to the message top); empty composer auto-closes on switching; tables/highlight/strike/blockquote in cards; **reply references** (formatted hover popover + click-to-source highlight for quote-replies); draft banner visible again (zero-width alert-band fallback). |
 
 ### Hard-won invariants (why the code looks the way it does)
 
@@ -254,4 +293,13 @@ Full details in [CHANGELOG.md](CHANGELOG.md); this is the arc.
 7. **The site fires synthetic editor events** — only trusted input counts
    as the user typing.
 8. **React owns its subtrees** — extension UI overlays aligned to site
-   rects; nothing is inserted into React-managed containers.
+   rects; nothing is inserted into React-managed containers. Styling text
+   *inside* those subtrees (reply references, the source-jump highlight) uses
+   the CSS Custom Highlight API, which decorates arbitrary ranges with no DOM
+   mutation at all.
+9. **Rendered text and its source rarely match character-for-character** — a
+   selection's `toString()` adds block-boundary newlines the DOM lacks, and a
+   message's markdown carries syntax the reader never sees. Every quote/anchor
+   lookup matches on a **dense projection** (ignored whitespace, optionally
+   markdown syntax) mapped back to source offsets (`shared/text-match.ts`);
+   exact `indexOf` silently mis-anchored multi-line quotes to the message top.
