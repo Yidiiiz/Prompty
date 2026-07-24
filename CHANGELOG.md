@@ -2,7 +2,42 @@
 
 All notable changes to Prompt Tree are documented here.
 
-## 0.12.1 — 2026-07-23
+## 0.12.2 — 2026-07-24
+
+### Branch switching
+
+- **Switching branches from the Prompt history panel works in place again.**
+  The native `‹ Previous / Next version ›` arrows are matched by their ARIA
+  label; claude.ai shipped a label change, so the exact-match selector found
+  nothing and every panel switch silently fell back to the leaf-PUT-and-reload
+  path — a jarring reload that could also land on the wrong branch. The arrow
+  selector is now tolerant (case-insensitive `previous` / `next` substring on
+  `aria-label` **or** `title`, always scoped within a single message row so it
+  can't mis-match), restoring the seamless no-reload switch.
+
+### Prompt history panel
+
+- Branch-option carets now point the way they act: **▾ for "N more"** (expands
+  downward) and **▴ for "show less"** (collapses upward).
+- **Deleted notes moved into a subtle bottom tray.** It only appears when
+  deleted notes exist, sits quietly at the very bottom collapsed behind a
+  right-pointing caret, and expands on click to reveal the restorable notes
+  (capped at ~1/5 of the panel height, scrolling past that). Styled to recede,
+  not to draw the eye.
+
+### Notes & comments
+
+- **Math renders.** Inline `$…$` and block `$$…$$` LaTeX now display legibly:
+  Greek letters, operators and relations become their Unicode glyphs,
+  sub/superscripts become real `<sub>`/`<sup>`, and `\frac`/`\sqrt` get a light
+  structural layout. Currency like `$5` and `$10` is left untouched. (Full
+  typesetting needs an engine we don't bundle; this makes formulas readable.)
+- **Table first columns no longer get squished.** Tables size to their content
+  (`max-content`) instead of being forced to the card width, and scroll
+  horizontally when wider than the card.
+- **Continuation messages read as your voice again** — a follow-up question in
+  a note card is now bold and bright like the first message, marked only by a
+  small `↳`, instead of dim secondary text.
 
 ### Drafts
 

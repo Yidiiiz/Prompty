@@ -1042,9 +1042,10 @@ const CARD_BASE_CSS = `
     box-shadow: 0 -1px 0 0 ${cssVar("--border-300", 0.6)};
   }
   .card .q { font-weight: 600; color: ${cssVar("--text-100")}; margin-bottom: 5px; white-space: pre-wrap; }
-  /* continuation questions read as extensions, not new messages */
-  .card .pair.fu .q { font-weight: 500; font-size: 11px; color: ${cssVar("--text-300")}; }
-  .card .pair.fu .q::before { content: "↳ "; color: ${cssVar("--text-500")}; }
+  /* continuation questions are still the user's message: bold and bright like
+     the first, with only a small caret to mark them as a follow-up */
+  .card .pair.fu .q { font-weight: 600; color: ${cssVar("--text-100")}; }
+  .card .pair.fu .q::before { content: "↳ "; font-weight: 400; color: ${cssVar("--text-500")}; }
   .card .tmore {
     display: block; width: 100%; text-align: left;
     border: none; background: none; cursor: pointer;
@@ -1060,10 +1061,18 @@ const CARD_BASE_CSS = `
   .card .a code { font-family: ${FONT_MONO}; font-size: 11px; }
   .card .a a { color: ${cssVar("--accent-secondary-100")}; }
   .card .a mark { background: ${cssVar("--accent-main-100", 0.25)}; color: inherit; border-radius: 2px; padding: 0 1px; }
-  .card .a table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 11px; display: block; overflow-x: auto; }
-  .card .a th, .card .a td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 3px 6px; text-align: left; }
+  /* display:block + overflow lets a wide table scroll; max-content sizing (not
+     a forced 100%) stops the auto layout from squishing the first column */
+  .card .a table { border-collapse: collapse; width: max-content; min-width: 100%; max-width: none; margin: 4px 0; font-size: 11px; display: block; overflow-x: auto; }
+  .card .a th, .card .a td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 3px 6px; text-align: left; white-space: nowrap; }
   .card .a th { background: ${cssVar("--bg-200", 0.7)}; font-weight: 600; }
   .card .a blockquote { margin: 4px 0; padding: 2px 8px; border-left: 2px solid ${cssVar("--border-200")}; color: ${cssVar("--text-300")}; }
+  .card .a .mathblock { margin: 6px 0; text-align: center; overflow-x: auto; }
+  .card .a .math { font-style: italic; white-space: nowrap; }
+  .card .a .math sup, .card .a .math sub { font-style: normal; }
+  .card .a .mfrac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 2px; }
+  .card .a .mnum { border-bottom: 1px solid currentColor; padding: 0 3px; }
+  .card .a .mden { padding: 0 3px; }
   .card .fucomp { display: none; margin-top: 7px; }
   .card .fufoot { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
   .card .foot { display: flex; align-items: center; gap: 4px; margin-top: 7px; }
@@ -1217,8 +1226,14 @@ const MODAL_CSS = `
   .answer code { font-family: ${FONT_MONO}; font-size: 13px; }
   .answer a { color: ${cssVar("--accent-secondary-100")}; }
   .answer mark { background: ${cssVar("--accent-main-100", 0.25)}; color: inherit; border-radius: 2px; padding: 0 1px; }
-  .answer table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
-  .answer th, .answer td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 5px 9px; text-align: left; }
+  .answer table { border-collapse: collapse; width: max-content; min-width: 100%; max-width: none; margin: 8px 0; font-size: 13px; display: block; overflow-x: auto; }
+  .answer th, .answer td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 5px 9px; text-align: left; white-space: nowrap; }
   .answer th { background: ${cssVar("--bg-200", 0.7)}; font-weight: 600; }
   .answer blockquote { margin: 8px 0; padding: 4px 12px; border-left: 3px solid ${cssVar("--border-200")}; color: ${cssVar("--text-300")}; }
+  .answer .mathblock { margin: 10px 0; text-align: center; overflow-x: auto; }
+  .answer .math { font-style: italic; white-space: nowrap; }
+  .answer .math sup, .answer .math sub { font-style: normal; }
+  .answer .mfrac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 3px; }
+  .answer .mnum { border-bottom: 1px solid currentColor; padding: 0 4px; }
+  .answer .mden { padding: 0 4px; }
 `;

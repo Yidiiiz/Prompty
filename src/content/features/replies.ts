@@ -479,9 +479,15 @@ const POPOVER_CSS = `
   .body code { font-family: ${FONT_MONO}; font-size: 11px; }
   .body a { color: ${cssVar("--accent-secondary-100")}; }
   .body mark { background: ${cssVar("--accent-main-100", 0.25)}; color: inherit; border-radius: 2px; padding: 0 1px; }
-  .body table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 11px; }
-  .body th, .body td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 3px 6px; text-align: left; }
+  .body table { border-collapse: collapse; width: max-content; min-width: 100%; max-width: none; margin: 4px 0; font-size: 11px; display: block; overflow-x: auto; }
+  .body th, .body td { border: 1px solid ${cssVar("--border-300", 0.7)}; padding: 3px 6px; text-align: left; white-space: nowrap; }
   .body th { background: ${cssVar("--bg-200", 0.7)}; font-weight: 600; }
+  .body .mathblock { margin: 6px 0; text-align: center; overflow-x: auto; }
+  .body .math { font-style: italic; white-space: nowrap; }
+  .body .math sup, .body .math sub { font-style: normal; }
+  .body .mfrac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 2px; }
+  .body .mnum { border-bottom: 1px solid currentColor; padding: 0 3px; }
+  .body .mden { padding: 0 3px; }
   .body blockquote {
     margin: 4px 0; padding: 2px 8px;
     border-left: 2px solid ${cssVar("--border-200")};

@@ -56,12 +56,16 @@ export const SELECTORS = {
     optional: true,
   },
   branchPrev: {
-    selector: 'button[aria-label="Previous version"]',
+    // Tolerant match: claude.ai has shipped this arrow as "Previous version",
+    // "Previous message", etc. Always queried WITHIN a single message row, so a
+    // case-insensitive "previous" substring (aria-label OR title) is safe from
+    // false positives yet survives a label rename that exact-match would miss.
+    selector: 'button[aria-label*="previous" i], button[title*="previous" i]',
     description: "Native branch pagination: previous sibling arrow next to the N / M counter.",
     optional: true, // only on branched messages
   },
   branchNext: {
-    selector: 'button[aria-label="Next version"]',
+    selector: 'button[aria-label*="next" i], button[title*="next" i]',
     description: "Native branch pagination: next sibling arrow next to the N / M counter.",
     optional: true,
   },

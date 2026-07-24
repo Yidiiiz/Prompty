@@ -1,6 +1,6 @@
 # Prompt Tree — Project Specification & Update History
 
-**Current version:** 0.12.1 (2026-07-23) · Chrome MV3 · personal use only
+**Current version:** 0.12.2 (2026-07-24) · Chrome MV3 · personal use only
 
 A Chrome extension that augments **claude.ai** with power-user tools built on
 the site's real conversation structure, observed from its own network traffic
@@ -14,7 +14,7 @@ the extension does **today** and how it got here. Companion docs:
 
 ---
 
-## 1. Feature specifications (as of 0.12.1)
+## 1. Feature specifications (as of 0.12.2)
 
 ### 1.1 Branch compose
 
@@ -280,6 +280,7 @@ Full details in [CHANGELOG.md](CHANGELOG.md); this is the arc.
 | 0.11.1 | 2026-07-16 | Hover highlight removed (scroll-only tracking); first-message pin at scroll 0; edge centering reverted to clamping. |
 | 0.12.0 | 2026-07-23 | Whitespace-insensitive note/comment anchoring (multi-line quotes no longer drop to the message top); empty composer auto-closes on switching; tables/highlight/strike/blockquote in cards; **reply references** (formatted hover popover + click-to-source highlight for quote-replies); draft banner visible again (zero-width alert-band fallback). |
 | 0.12.1 | 2026-07-23 | Clear persists across reloads (cleared tombstone re-empties the site's resurrected text); note answers allowed to use markdown formatting (instructions had suppressed it); blockquote rendering fixed (`>` escaped to `&gt;` before detection). |
+| 0.12.2 | 2026-07-24 | Branch switching restored: the native version-arrow selector is now a tolerant, row-scoped `previous`/`next` substring match (claude.ai renamed the ARIA label, so exact-match found nothing and every panel switch fell to the reload fallback). Panel branch carets point the way they act (▾ more / ▴ less); deleted notes moved to a subtle collapsible bottom tray. Note/comment renderer gained legible LaTeX math ($…$ and $$…$$ → Unicode + `<sub>`/`<sup>` + `\frac`/`\sqrt`); table columns size to content instead of squishing; note continuation questions render bold/bright like the first message. |
 
 ### Hard-won invariants (why the code looks the way it does)
 

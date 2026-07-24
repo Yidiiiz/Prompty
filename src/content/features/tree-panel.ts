@@ -246,6 +246,44 @@ const PANEL_CSS = `
   }
   .drawer button:hover { background: ${cssVar("--bg-300", 0.6)}; color: ${cssVar("--text-100")}; }
 
+  /* --------------------------------------------- deleted-notes tray */
+  /* Deliberately low-key: sits at the very bottom, collapsed, dim. Not a
+     destination — just a way back for something removed by mistake. */
+  .deltray {
+    flex: none;
+    border-top: 1px solid ${cssVar("--border-300", 0.5)};
+  }
+  .deltray .delhead {
+    display: flex; align-items: center; gap: 6px;
+    width: 100%; padding: 5px 12px;
+    font-size: 10.5px; letter-spacing: 0.03em;
+    color: ${cssVar("--text-500")};
+    opacity: 0.75;
+    transition: opacity ${UI.transition}, color ${UI.transition};
+  }
+  .deltray .delhead:hover { opacity: 1; color: ${cssVar("--text-400")}; }
+  .deltray .delhead .caret { font-size: 9px; line-height: 1; width: 8px; }
+  .deltray .delhead .lbl { flex: 1; text-align: left; }
+  .deltray .delhead .n {
+    font-variant-numeric: tabular-nums;
+    padding: 0 5px; border-radius: 8px; font-size: 9.5px;
+    background: ${cssVar("--bg-300", 0.5)}; color: ${cssVar("--text-500")};
+  }
+  .deltray.open .delhead { opacity: 1; color: ${cssVar("--text-400")}; }
+  .deltray .dellist {
+    max-height: 20vh; overflow-y: auto; scrollbar-width: thin;
+    padding: 2px 12px 8px;
+  }
+  .deltray .dellist button {
+    display: block; width: 100%;
+    font-size: 11px; color: ${cssVar("--text-400")};
+    padding: 3px 6px; margin-top: 2px; border-radius: ${UI.radiusSm};
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    text-align: left;
+    transition: background ${UI.transition}, color ${UI.transition};
+  }
+  .deltray .dellist button:hover { background: ${cssVar("--bg-300", 0.6)}; color: ${cssVar("--text-100")}; }
+
   /* ------------------------------------------------------- icon strip */
   .mini {
     display: flex; align-items: center; justify-content: center;
@@ -278,6 +316,8 @@ export class TreePanelFeature implements Feature {
   private expandedBranches = new Set<string>();
   private drawerItems: Array<{ noteId: string; label: string }> = [];
   private deletedItems: Array<{ noteId: string; label: string }> = [];
+  /** Whether the subtle bottom "deleted notes" tray is expanded. */
+  private deletedExpanded = false;
   /** Prompt uuid of the pair currently in view in the chat. */
   private currentViewUuid: string | null = null;
   /** Branch-compose target: entries below it drop out of the panel. */
@@ -546,6 +586,7 @@ export class TreePanelFeature implements Feature {
       b: this.branchTargetUuid,
       d: this.drawerItems,
       dd: this.deletedItems,
+      de: this.deletedExpanded,
       x: [...this.expandedBranches],
       p: path.map((n) => {
         const sibs = tree!.siblingsOf(n.uuid);
@@ -576,20 +617,33 @@ export class TreePanelFeature implements Feature {
     html += strip ? this.renderStrip(pairs) : this.renderFull(pairs);
     html += `</div>`;
 
-    if (!strip && (this.drawerItems.length || this.deletedItems.length)) {
+    if (!strip && this.drawerItems.length) {
       html += `<div class="drawer">`;
-      if (this.drawerItems.length) {
-        html += `<span class="dhead">Unanchored notes</span>`;
-        for (const item of this.drawerItems) {
-          html += `<button data-act="open-note" data-note="${escapeHtml(item.noteId)}">${escapeHtml(item.label)}</button>`;
-        }
+      html += `<span class="dhead">Unanchored notes</span>`;
+      for (const item of this.drawerItems) {
+        html += `<button data-act="open-note" data-note="${escapeHtml(item.noteId)}">${escapeHtml(item.label)}</button>`;
       }
-      if (this.deletedItems.length) {
-        html += `<span class="dhead">Deleted notes</span>`;
+      html += `</div>`;
+    }
+
+    // Deleted notes live in a subtle bottom tray, collapsed by default: a low-
+    // key affordance, not a main attraction. Only shown when any exist.
+    if (!strip && this.deletedItems.length) {
+      const open = this.deletedExpanded;
+      html += `<div class="deltray${open ? " open" : ""}">`;
+      html += `<button class="delhead" data-act="toggle-deleted"
+                       title="${open ? "Hide" : "Show"} deleted notes">
+                 <span class="caret">${open ? "▾" : "▸"}</span>
+                 <span class="lbl">Deleted notes</span>
+                 <span class="n">${this.deletedItems.length}</span>
+               </button>`;
+      if (open) {
+        html += `<div class="dellist">`;
         for (const item of this.deletedItems) {
           html += `<button data-act="restore-note" data-note="${escapeHtml(item.noteId)}"
                            title="Click to restore">↩ ${escapeHtml(item.label)}</button>`;
         }
+        html += `</div>`;
       }
       html += `</div>`;
     }
@@ -727,9 +781,9 @@ export class TreePanelFeature implements Feature {
         </button>`;
     }
     if (hidden > 0) {
-      html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▸ ${hidden} more</button>`;
+      html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▾ ${hidden} more</button>`;
     } else if (expanded && others.length > OPTIONS_SHOWN_COLLAPSED) {
-      html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▾ show less</button>`;
+      html += `<button class="caret" data-act="expand" data-uuid="${node.uuid}">▴ show less</button>`;
     }
     html += `</div>`;
     return html;
@@ -777,6 +831,11 @@ export class TreePanelFeature implements Feature {
         break;
       case "switch":
         if (tree) void this.adapter.switchToBranch(tree, uuid);
+        break;
+      case "toggle-deleted":
+        this.deletedExpanded = !this.deletedExpanded;
+        this.lastSignature = "";
+        this.render();
         break;
       case "open-note":
         this.ctx.bus.emit("unanchored-note-open", { noteId });
