@@ -15,7 +15,7 @@
  *
  * XMLHttpRequest is deliberately NOT patched: reconnaissance confirmed all
  * relevant claude.ai traffic uses fetch. If tree loads stop being observed,
- * the content script surfaces a "Prompt Tree unavailable" toast.
+ * the content script surfaces a "Prompty unavailable" toast.
  *
  * Failure behavior: every interception step is wrapped so that on any error
  * the original request proceeds untouched — native claude.ai behavior is

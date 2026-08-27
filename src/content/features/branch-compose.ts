@@ -134,7 +134,7 @@ export class BranchComposeFeature implements Feature {
     const tree = this.ctx.getTree();
     const node = tree?.nodes.get(targetUuid);
     if (!conversationUuid || !tree || !node) {
-      toastOnce("branch-activate", "Prompt Tree: couldn't resolve that message in the conversation tree.");
+      toastOnce("branch-activate", "Prompty: couldn't resolve that message in the conversation tree.");
       return;
     }
     this.cancel(); // per-activation mode: entering replaces any prior state
@@ -217,7 +217,7 @@ export class BranchComposeFeature implements Feature {
       return;
     }
     if (!getComposerDockRect()) {
-      toastOnce("branch-dock", "Prompt Tree: composer not found — the branching header can't be shown.");
+      toastOnce("branch-dock", "Prompty: composer not found — the branching header can't be shown.");
       return;
     }
     const label = summarizer.summarize(this.ctx.getTree()?.nodes.get(mode.targetUuid)?.text ?? "", 8);

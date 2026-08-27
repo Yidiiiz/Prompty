@@ -1,6 +1,6 @@
 /**
  * content/toast.ts — the single non-blocking notification surface. Used
- * mainly for degradation notices ("Prompt Tree: [feature] unavailable after a
+ * mainly for degradation notices ("Prompty: [feature] unavailable after a
  * claude.ai update"), shown at most once per id per page load.
  *
  * Rendered in its own Shadow DOM host, fixed at the bottom center, above the

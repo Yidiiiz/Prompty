@@ -431,7 +431,7 @@ export class DraftsFeature implements Feature {
       } else {
         toastOnce(
           "draft-anchor-gone",
-          "Prompt Tree: the message this note draft was attached to no longer exists — restored as a normal draft."
+          "Prompty: the message this note draft was attached to no longer exists — restored as a normal draft."
         );
         this.restoreText(draft.text);
       }
@@ -444,7 +444,7 @@ export class DraftsFeature implements Feature {
       } else {
         toastOnce(
           "draft-branch-gone",
-          "Prompt Tree: the message this branch draft targeted no longer exists — restored as a normal draft."
+          "Prompty: the message this branch draft targeted no longer exists — restored as a normal draft."
         );
       }
     }
@@ -456,7 +456,7 @@ export class DraftsFeature implements Feature {
       if (!files.length || !attachFilesToComposer(files)) {
         toastOnce(
           "draft-files",
-          "Prompt Tree: saved attachments couldn't be reattached automatically — please re-add them."
+          "Prompty: saved attachments couldn't be reattached automatically — please re-add them."
         );
       }
     }
@@ -464,7 +464,7 @@ export class DraftsFeature implements Feature {
 
   private restoreText(text: string): void {
     if (!setComposerText(text)) {
-      toastOnce("draft-text", "Prompt Tree: couldn't write into the composer after a claude.ai update.");
+      toastOnce("draft-text", "Prompty: couldn't write into the composer after a claude.ai update.");
     }
   }
 }

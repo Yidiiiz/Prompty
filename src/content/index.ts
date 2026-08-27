@@ -263,7 +263,7 @@ function main(): void {
         if (feature) features.push(feature);
       } catch (err) {
         console.error("[prompt-tree] feature failed to construct", err);
-        toastOnce("feature-construct", "Prompt Tree: a feature failed to start after a claude.ai update.");
+        toastOnce("feature-construct", "Prompty: a feature failed to start after a claude.ai update.");
       }
     }
     const applySettings = (s: Settings) => {
@@ -301,7 +301,7 @@ function main(): void {
       if (report.failed.length) {
         toastOnce(
           "selectors-failed",
-          `Prompt Tree: some page hooks were not found (${report.failed.join(", ")}) — features relying on them are limited until updated.`
+          `Prompty: some page hooks were not found (${report.failed.join(", ")}) — features relying on them are limited until updated.`
         );
       }
     })();

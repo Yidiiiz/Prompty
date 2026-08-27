@@ -169,7 +169,7 @@ export class NoteCardManager {
         live.reason = msg.reason;
         this.updateCardContent(baseNoteId(msg.noteId));
       }
-      toastOnce(`note-failed-${msg.noteId}`, `Prompt Tree: note failed — ${msg.reason}`);
+      toastOnce(`note-failed-${msg.noteId}`, `Prompty: note failed — ${msg.reason}`);
     });
     ctx.bus.on("branch-mode-changed", (msg) => {
       // Entering branch mode retires an empty, unsubmitted composer.
@@ -326,7 +326,7 @@ export class NoteCardManager {
     if (!this.kinds[kind]) return;
     const layer = this.ensureGutter();
     if (!layer) {
-      toastOnce("gutter-missing", "Prompt Tree: chat layout not recognized — notes are unavailable.");
+      toastOnce("gutter-missing", "Prompty: chat layout not recognized — notes are unavailable.");
       return;
     }
     this.closeComposer();

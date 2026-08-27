@@ -1,8 +1,8 @@
 {
-  "name": "prompt-tree",
+  "name": "prompty",
   "version": "0.12.2",
   "private": true,
-  "description": "Prompt Tree - a personal-use browser extension that augments claude.ai with branch composing, a conversation tree panel, inline notes, margin comments, and draft autosave.",
+  "description": "Prompty - a personal-use browser extension that augments claude.ai with branch composing, a conversation tree panel, inline notes, margin comments, and draft autosave.",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",

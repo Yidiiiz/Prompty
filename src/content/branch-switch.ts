@@ -150,7 +150,7 @@ export class LeafPutAdapter implements BranchSwitchAdapter {
     } else {
       toastOnce(
         "branch-switch-failed",
-        "Prompt Tree: branch switch failed — claude.ai may have changed its API. Use the native ‹ › arrows."
+        "Prompty: branch switch failed — claude.ai may have changed its API. Use the native ‹ › arrows."
       );
     }
   }
